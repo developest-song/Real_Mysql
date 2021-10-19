@@ -113,4 +113,17 @@ ex) ALTER USER ‘root’@’localhost’ IDENTIFIED BY ‘new_password’ RETAI
 	8.0부터 동적 권한 추가
 동적 권한 – mysql 서버의 컴포넌트나 플러그인이 설치되면 그때 등록되는 권한 
 
+Role - 권한을 묶어서 역할로 사용
+ex)
+create role role_emp_read, role_emp_write; // 껍데기 선언
+grant select on employees.* to role_emp_read; // 권한 부여
+grant insert, update, delete on employees.* to role_emp_write; // 권한 부여
+create user reader@'127.0.0.1' identified by 'qwerty12'; // 계정 생성
+create user writer@'127.0.0.1' identified by 'qwerty12'; // 계정 생성
+grant role_emp_read to reader@'127.0.0.1'; // 역할 부여
+grant role_emp_read, role_emp_write to writer@'127.0.0.1' // 역할 부여
+set role 'role_emp_read'; // 역할 활성화
+select current_role(); // 역할 확인
+activate_all_roles_on_login=ON // 역할 자동화 활성 변수
 
+역할과 계정은 동일한 객체로 취급 (관리자 입장에서 prefix를 지정해서 관리해야함)
