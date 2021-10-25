@@ -205,3 +205,20 @@ Mysql	TABLE_CATALOG	TABLE_SCHEMA		TABLE_NAME		TABLE_TYPE	ENGINE		VERSION		ROW_FO
 ++ InnoDB이외의 스토리지 엔진(MyISAM, CSV)을 사용하는 테이블들은 메타데이터 저장을 위해 SDI(Serialized Dictionary Information) 파일을 사용하며 *.FRM 파일과 동일한 역할을 한다. 
    ibd2sdi 유틸리티 사용 InnoDB 테이블 스페이스에서 스키마 정보를 추출 - P97 사용방법
    
+InnoDB는 Mysql의 스토리지 엔진 중 거의 유일하게 레코드 기반의 잠금 제공 + 높은 동시성 처리
+InnoDB의 모든 테이블은 기본적으로 Primary key를 기준으로 클러스터링 저장. 즉 Primary key는 다른 보조 인덱스에 비해 비중이 높고,
+Oracle DBMS의 IOT와 동일한 구조가 됨.
+MyISAM은 클러스터링 키를 지원하지 않아 Primary key와 Secondary Index의 구조는 차이가 없고, 모든 인덱스는 물리적 레코드 주소 값을 가진다.
+
+외래 키 지원 - InnoDB 스토리지 엔진 레벨에서 지원, MyISAM, MEMORY 테이블에선 사용 불가 
+foreign_key_checks = OFF 외래 키 관계 체크 OFF
+
+MVCC(Multi Version Concurrency Control) - 레코드 레벨의 트랜잭션 지원하는 DBMS가 제공하는 기능, 잠금을 사용하지 않는 일관된 읽기를 제공
+InnoDB - Undo log를 이용해서 기능 구현 // Multi Version - 하나의 레코드에 대해 여러 개의 버전이 관리 됨 
+ex) 레코드를 UPDATE 했을때 새로운 값은 버퍼 풀에 기록되고, Undo log에 기존의 레코드가 기록된다. 그 이후 시스템 변수에 설정 된 격리 수준에 따라 반환 값이 달라진다. 
+이후 COMMIT, ROLLBACK으로 확정 짓고 Undo 영역은 삭제된다( 필요로 하는 트랜잭션이 더는 없을 때 )
+
+잠금 없는 일관된 읽기 
+InnoDB는 MVCC를 이용해 잠금을 걸지 않고 읽기 작업을 수행
+INSERT 가  걸려 있어도 Undo log를 통해 SELECT을 수행한다. 하지만 트랜잭션이 오래 될 경우 삭제되지 못한 Undo log때문에 Mysql서버가 느려지거나 문제가 발생 할 수 있다.
+
