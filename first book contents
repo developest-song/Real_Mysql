@@ -509,6 +509,49 @@ select EVENT_NAME, CURRENT_NUMBER_OF_BYTES_USED
   from performance_schema.memory_summary_global_by_event_name
  where EVENT_NAME='memory/innodb/adaptive hash index';
 
+InnoDB, MyISAM, MEMORY 스토리지 엔진 비교
+5.5 이전 기본 스토리지 엔진 - MyISAM
+5.5 이후 기본 스토리지 엔진 - InnoDB (But, 시스템 레이블인 mysql DB는 MyISAM 사용)
+-> 전문 검색, 공간 좌표 검색 기능 MyISAM만 지원
+
+8.0 이후부터는 모든 시스템 레이블이 InnoDB로 교체됐고, 전문 검색, 공간 좌표 검색도 지원한다.
+8.0 부터는 MyISAM 만이 가지는 장점이 없는 상태
+
+MEMORY 스토리지 엔진 또한 동시 처리 성능에 있어서 InnoDB 스토리지 엔진을 따라갈 수 없다.
+하나의 스레드에서만 데이터를 읽고 쓴다면 InnoDB보다 빠를 수 있겠지만 온라인 트랜잭션 처리를 위한 목적으로 사용될 경우엔 해당되지 않는다.(대부분 mysql 목적)
+또한 가변 길이 타입의 칼럼을 지원하지 않는다는 문제점 때문에 8.0에서는 TempTable 스토리지 엔진이 대체해 사용되고 있다.
+-> internal_tmp_mem_storage_engine 변수를 이용해 내부 임시 테이블을 위해 TempTable, MEMORY 중 고를 수 있다.(default는 TempTable이고, MEMORY는 호환성으로 남아있는 것)
+
+MyISAM 스토리지 엔진 아키텍처 
+- 키 캐시(= Key cache, 키 버퍼)
+InnoDB의 버퍼 풀과 비슷한 역할, 인덱스만을 대상으로 작동, 인덱스의 디스크 쓰기 작업에 대해서만 부분적으로 버퍼링 역할
+키 캐시 히트율(Hit rate) = 100 - (Key_reads / Key_read_requests * 100)
+key_reads - 인덱스를 디스크에서 읽어 들인 횟수를 저장하는 상태 변수 (SHOW GLOBAL STATUS LIKE 'Key%';)
+key_read_requests - 키 캐시로부터 인덱스를 읽은 횟수를 저장하는 상태 변수
+메뉴얼 상 히트율을 99% 이상으로 유지 권장, 99% 미만이라면 키 캐시를 조금 더 크게 설정 (key cache default = 4GB)
+ex) key_buffer_size = 4GB
+kbuf_board.key_buffer_size = 2GB 	mysql> CACHE INDEX db1.board, db2.board IN kbuf_board;
+kbuf_comment.key_buffer_size = 2GB 	mysql> CACHE INDEX db1.comment, db2.comment IN kbuf_comment;
+4GB, 2GB, 2GB씩 할당 			추가 키 캐시와 어떤 인덱스와 캐시할지 설정
+
+운영체제의 캐시 및 버퍼
+MyISAM 테이블의 인덱스는 키 캐시를 이용해 빠르게 검색이 가능하지만, 데이터에 대해서는 I/O를 해결할 캐시나 버퍼링 기능이 없기 때문에
+데이터 읽기 쓰기 작업은 운영체제에 의존 할 수 밖에 없다. 
+만약 운영체제에서 다른 어플리케이션에 메모리를 모두 사용하고 있다면 MyISAM 테이블의 데이터를 캐시하지 못하며 결과적으로 쿼리 처리가 느려진다.
+MyISAM을 주로 사용하는 Mysql에선 키 캐시는 최대 물리 메모리의 40% 이상을 넘지않게, 나머지는 운영체제가 자체적인 파일 시스템을 위한 캐시 공간을 마련할 수 있도록 해주는 것이 좋다.
+
+데이터 파일과 프라이머리 키(인덱스) 구조
+InnoDB - 프라이머리 키에 의해 클러스터링되어 저장 
+MyISAM - 클러스터링 없이 데이터 파일이 힙 공간처럼 활용된다.
+-> 프라이머리 키 값과 무관하게 INSERT되는 순서대로 저장된다. 
+MyISAM 테이블에 저장되는 레코드는 모두 ROWID라는 물리적인 주솟값을 가지고, 프라이머리 키와 세컨더리 인덱스는 모두 ROWID 값을 포인터로 가진다.
+ROWID 
+고정 길이 - MAX_ROWS 옵션 사용 시, 최대 가질 수 있는 레코드 한정, 4바이트 정수 사용, 레코드가 INSERT된 순번이 ROWID로 사용
+가변 길이 - MAX_ROWS 옵션 미사용 시, myisam_data_pointer_size (default 7) 만큼 2 ~ 7의 가변적인 ROWID를 갖게됨 // 최대 256TB // 8 일경우 64PB 저장가능
+
+
+
+
 
 
 
