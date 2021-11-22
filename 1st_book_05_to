@@ -34,5 +34,48 @@ mysql> UNLOCK INSTANCE;
 
 하지만 일반적인 테이블의 데이터 변경은 허용.
 
-테이블 락 
+테이블 락 - 개별 테이블 단위로 설정되는 잠금 
+명시적 : LOCK TABLES table_name [ READ | WRITE ] // UNLOCK TABLES 
+묵시적 : MyISAM이나 MEMORY 테이블에 데이터를 변경하는 쿼리를 실행하면 발생한다.
+        InnoDB) 스토리지 엔진 차원에서 레코드 기반의 잠금 제공 & 테이블 락이 설정되지만 대부분의 DML 쿼리에서는 무시되고 스키마 변경하는 DDL의 경우에만 영향을 미침
+
+네임드 락 - GET_LOCK() 함수를 이용해 임의의 문자열에 대해 잠금을 설정. 단순히 사용자가 지정한 문자열에 대해 획득하고 반납(해제)
+많은 레코드에 대해서 복잡한 요건으로 레코드를 변경하는 트랜잭션에 유용하게 사용. (8.0부터 네임드 락 중첩가능, 한 번에 해제 가능 )
+
+메타데이터 락 - 데이터베이스 객체의 이름이나 구조를 변경하는 경우 획득하는 잠금. 명시적 획득 불가
+RENAME TABLE tab_a TO tab_b // 원본 이름, 변경될 이름 모두 한꺼번에 잠금
+ex) 임시 rank_new를 rank로 올리기 위해 이름 변경할 경우 
+mysql> RENAME TABLE rank TO rank_backup, rank_new TO rank; // 한 꺼번에 실행 시 table not found없이 가능 
+
+트랜잭션과 같이 사용할 경우 : +트랜잭션 +key_block_size (p166)
+
+InnoDB 스토리지 엔진 잠금
+Mysql에서 제공하는 잠금과는 별개로 스토리지 엔진 내부에서 레코드 기반의 잠금 방식을 탑재 -> MyISAM보다 훨씬 뛰어난 동시성 처리 제공
+But) 이원화된 잠금 처리 탓에 잠금 정보는 Mysql 명령을 이용해 정보를 접근하기 까다로움 
+1) lock_monitor
+2) SHOW ENGINE INNODB STATUS
+
+최근 버전에서는 InnoDB의 트랜잭션, 잠금, 잠금 대기 중인 트랜잭션의 목록을 조회 할 수 있음
+information_schema [ INNODB_TRX, TNNODB_LOCKS, INNODB_LOCK_WAITS ] 조인해서 조회
+performance_schema를 이용해 스토리지 엔진의 내부 잠금에 대한 모니터링 방법도 추가 
+
+락 그림 (p167)
+레코드  - 레코드 자체만으 잠그는 것을 레코드 락, 다른 상용 DBMS의 레코드 락과 동일한 역할
+하지만, InnoDB 스토리지 엔진은 레코드 자체가 아니라 인덱스의 레코드를 잠근다 *
+인덱스가 하나도 없는 테이블이더라도 내부적으로 자동 생성된 클러스터 인덱스를 이용해 잠금을 설정한다.
+
+갭 락
+레코드와 바로 인접한 레코드 사이의 간격만을 잠그는 것 
+레코드와 레코드 사이의 간격에 새로운 레코드가 생성되는 것을 제어하는 것 
+
+넥스트 키 락
+레코드 락과 갭 락을 합쳐 놓은 형태의 잠금
+STATEMENT 포맷의 binlog를 사용하는 Mysql서버에서는 REPEATABLE READ 격리 수준을 사용해야 한다. 
+innodb_locks_unsafe_for_binlog 변수 비활성화 시 변경을 위해 검색을 하는 레코드에는 넥스트 키 락 방식으로 잠금이 걸린다.
+갭 락, 넥스트 키 락은 binlog에 기록되는 쿼리가 레플리카 서버에서 실행될 때 소스 서버에서 만들어 낸 결과와 동일한 결과를 만들어내도록 보장하는 것이 주목적이다 .
+가능하다면 binlog_format을 ROW로 바꿔서 넥스트 키 락이나 갭 락을 줄이는게 좋다 
+** binlog_format [ MIXED | ROW ] 에 대한 고찰, 성능은 ROW가 좋지만 안정성에 대한 문제?? **
+
+자동 증가 락
+
 
