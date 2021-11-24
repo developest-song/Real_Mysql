@@ -124,6 +124,20 @@ select r.trx_id as waiting_trx_id,
 
 select * from information_schema.INNODB_TRX;
 
+Mysql의 격리 수준
+트랜잭션의 격리 수준이란 여러 트랜잭션이 동시에 처리될 때 특정 트랜잭션이 다른 트랜잭션에서 변경하거나 조회하는 데이터를 볼 수 있게 허용할지 말지를 결정하는 것이다.
+4가지 - READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE // 뒤로 갈수록 격리 정도가 높고, 동시 처리 성능이 떨어짐
+DIRTY READ(=UNCOMMITTED)는 일반적인 데이터베이스에서 거의 사용하지 않고, SERIALIZABLE 또한 동시성이 중요한 데이터베이스에서는 거의 사용하지 않는다
+오라클 - 주로 READ COMMITTED / MySQL - 주로 REPEATABLE READ
+설명 예제 전제 - AUTO COMMIT = OFF
+
+1. READ UNCOMMITTED 
+- 각 트랜잭션에서의 변경 내용이 COMMIT이나 ROLLBACK 여부에 상관없이 다른 트랜잭션에서 보인다. // 정합성에 문제가 많음
+DIRTY READ - 어떤 트랜잭션에서 처리한 작업이 완료되지 않았는데도 다른트랜잭션에서 볼 수 있는 현상(READ UNCOMMITTED에서 DIRTY READ 허용)
+
+2. READ COMMITTED 
+- 
+
 
 
 
