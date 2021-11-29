@@ -196,6 +196,54 @@ mysql> OPTIMIZE TABLE t1;
 KEY_BLOCK_SIZE 결정
 KEY_BLOCK_SIZE를 4KB, 8KB로 테이블을 생성해서 샘플 데이터를 저장 후 판단.  10개이상 테스트 권장
 
+압축 테스트)
+CREATE TABLE employees.employees_comp4k(
+  emp_no int NOT NULL,
+  birth_date date NOT NULL,
+  first_name varchar(14) NOT NULL,
+  last_name varchar(16) NOT NULL,
+  gender enum('M','F') NOT NULL,
+  hire_date date NOT NULL,
+  PRIMARY KEY (emp_no),
+  KEY ix_firstname (first_name),
+  KEY ix_hiredate (hire_date)
+  ) ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=4;
+  
+
+mysql> set global innodb_cmp_per_index_enabled=ON; 
+// ON <- 인덱스별로 압축 실행 회수솽 성공 횟수가 기록됨 
+
+mysql> INSERT INTO employees_comp4k SELECT * FROM employees;
+
+mysql> SELECT
+		table_name, index_name, compress_ops, compress_ops_ok,
+		(compress_ops-compress_ops_ok)/compress_ops * 100 as compression_failure_pct
+		 FROM information_schema.INNODB_CMP_PER_INDEX;
+
+compression_failure_pct // 압축 실패율, 3~5% 미만으로 유지가능토록 KEY_BLOCK_SIZE 선택
+
+ls -alh data/employees/employees*.ibd
+-> 원본 table_size 30M -> 4K, 8K 압축 table_size 20M
+* 주의해야 할 것 
+압축 실패율이 높다고 압축을 사용하지 말아야 한다는 것은 아니고, INSERT된 데이터가 이후 변경되지 않는다면 압축을 권하고,
+압축 실패율이 낮은 경우 테이블의 데이터가 매우 빈번하게 조회되고 변경된다면 압축은 고려하기 어렵다.
+
+압축된 페이지의 버퍼 풀 적재 및 사용
+InnoDB 스토리지 엔진은 압축된 테이블의 데이터 페이지를 버퍼 풀에 적재하면, 디스크에서 읽은 상태 그대로의 데이터 페이지 목록을 관리하는 LRU 리스트와
+압축된 페이지들의 압축 해제 버전인 Unzip_LRU리스트를 별도로 관리하게 된다.
+
+Mysql 서버는 압축된 테이브로가 압축되지 않은 테이블이 공존하므로 결국 LRU 리스트는 
+압축이 적용되지 않은 테이블의 데이터 페이지, 압축이 적용된 테이블의 압축된 데이터 페이지 모두를 가진다. 
+그리고 Unzip_LRU리스트는 압축이 적용되지 않은 테이블의 데이터 페이지는 가지지 않으며, 압축이 적용된 테이블에서 일긍ㄴ 데이터 페이지만 관리한다.
+InnoDB는 결국 압축된 테이블에 대해서는 버퍼 풀의 공간을 이중으로 사용하여 메모리를 낭비하고, 압축된 페이지를 읽거나 변경 시 압축 해제를 하는데, 이 작업은 CPU를 상대적으로
+많이 소모하는 작업이다. 이 단점을 보완하기 위해 Unzip_LRU리스트를 별도로 관리하고 있따가 요청 패턴에 따라 적절히 처리 한다.
+1. 버퍼 풀 공간이 필요함 -> LRU 원본은 유지, Unzip_LRU 압축 해제 버전을 제거 공간 확보
+2. 압축 페이지 자주 사용 -> Unzip_LRU에 압축 헤제된 페이지를 계속 유지하여, 압축 및 압축 해제 작업을 최소화
+3. 압축 페이지 미사용으로 LRU에서 제거 될 경우 -> Unzip_LRU에서도 함께 제거
+
+압축 해제 버전 페이지의 적절한 수준 유지를 위한 어댑티브 알고리즘 
+CPU 사용량 높음 -> 압축, 압축 해제 최소화를 위한 Unzip_LRU 비율 높임
+Disk I/O 높음 -> Unzip_LRU 비율 낮춰서 버퍼 풀 공간 확보
 
 
 
