@@ -398,10 +398,10 @@ ALTER INSTANCE ROTATE BINLOG MASTER KEY;
 바이너리 로그 파일 암호화 확인
 SHOW BINARY LOGS; 
 
-mysqlbinlog 도구 활용
-
-
-
-
+mysqlbinlog 도구 활용 (p211)
+트랜잭션의 내용을 추적하거나 백업 복구를 위해 암호화된 바이너리 로그를 평문으로 복호화가 필요 할 경우 바이너리 로그 암호화 키가 없으면 복호화를 할 수 없다.
+mysqlbinlog가 해당 mysql서버에 요청해서 바이너리 로그 파일을 요청해야 한다. 
+$> mysqlbinlog --read-from-remote-server -u root -p -vvv mysql-bin.000011
+Enter password:
 
 
