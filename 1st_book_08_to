@@ -306,23 +306,59 @@ INDEX ix_test ( column_1, column_2, column_3, ... , column_n )
  - 동등 비교( =, IN )
  - 크다 작다 형태 ( >, < )
  - LIKE로 좌측 일치 패턴(LIKE '승환%')
- 위의 두가지 조건을 만족하는 쿼리는 column_1부터 column_i까지 작업 범위 결정 조건으로 사용되고, column_(i+1)부터 column_n까지의 조건은 체크 조건으로 사용된다.
+위의 두가지 조건을 만족하는 쿼리는 column_1부터 column_i까지 작업 범위 결정 조건으로 사용되고, column_(i+1)부터 column_n까지의 조건은 체크 조건으로 사용된다.
  
- ex) ... WHERE column_1 AND column_2=2 AND column_3 IN (10,20,30) AND column_4 <> 100
- column_1,2,3은 범위 결정 조건, column_4는 체크 조건으로 사용됨
+ex) ... WHERE column_1 AND column_2=2 AND column_3 IN (10,20,30) AND column_4 <> 100
+column_1,2,3은 범위 결정 조건, column_4는 체크 조건으로 사용됨
  
- R-Tree 인덱스
- 공간 인덱스(Spatial Index)는 R-Tree 인덱스 알고리즘을 이용해 2차원의 데이터를 인덱싱하고 검색하는 목적의 인덱스다.
- 기본적인 내부 메커니즘은 B-Tree와 흡사하며, 인덱스를 구성하는 칼럼의 값이 1차원의 스칼라 값인 B-Tree와 다르게 R-Tree 인덱스는 2차원의 공간 개념 값이라는 것이다.
- 위치 기반의 서비스를 구현하는 방법 중 하나 
- Mysql의 공간 확장 3가지 기능
- * 공간 데이터를 저장할 수 있는 데이터 타입
- * 공간 데이터의 검색을 위한 공간 인덱스(R-Tree 알고리즘)
- * 공간 데이터의 연산 함수(거리 또는 포함 관계의 처리)
+R-Tree 인덱스
+공간 인덱스(Spatial Index)는 R-Tree 인덱스 알고리즘을 이용해 2차원의 데이터를 인덱싱하고 검색하는 목적의 인덱스다.
+기본적인 내부 메커니즘은 B-Tree와 흡사하며, 인덱스를 구성하는 칼럼의 값이 1차원의 스칼라 값인 B-Tree와 다르게 R-Tree 인덱스는 2차원의 공간 개념 값이라는 것이다.
+위치 기반의 서비스를 구현하는 방법 중 하나 
+Mysql의 공간 확장 3가지 기능
+* 공간 데이터를 저장할 수 있는 데이터 타입
+* 공간 데이터의 검색을 위한 공간 인덱스(R-Tree 알고리즘)
+* 공간 데이터의 연산 함수(거리 또는 포함 관계의 처리)
  
- 구조 및 특성
- 
- 
+구조 및 특성
+Mysql은 공간 정보와 저장 및 검색을 위해 여러 가지 기하학적 도형(Geometry) 정보를 관리할 수 있는 데이터 타입을 제공한다. (그림 p254)
+POINT - 점
+LINE - 점들의 연결 
+POLYGON - 점들의 연결 (전부 이어짐)
+GEOMETRY - 위의 3객체를 모두 저장 가능함
+
+R-Tree 알고리즘을 이해하려면 MBR이라는 개념을 알고 있어야 한다.
+MBR - Minimum Bounding Rectangle, 해당 도형을 감싸는 최소 크기의 사각형
+이 사각형들의 포함 관계를 B-Tree 형태로 구현한 인덱스가 R-Tree 인덱스다.
+
+최상위 레벨의 MBR - R-Tree의 루트 노드에 저장되는 정보 (그림 p256)
+차상위 레벨의 MBR - R-Tree의 브랜치 노드에 저장되는 정보
+최하위 레벨의 MBR - R-Tree의 리프 노드에 저장되는 정보
+
+R-Tree 인덱스의 용도
+R-Tree는 앞에서 언급한 MBR 정보를 이용해 B-Tree 형태로 인덱스를 구축하므로 Rectangle의 'R'과 B-Tree의 'Tree를 섞어서 R-Tree라는 이름이 붙여졌으며, 공간 인덱스라고도 한다.
+일반적으로 WGS84(GPS) 기준의 위도, 경도 좌표 저장에 주로 사용된다. 하지만 위도, 경도 좌표뿐 아니라 CAD/CAM 소프트웨어 또는 회로 디자인 등과 같이 좌표 시스템에 기반을 둔 정보에
+대해서는 모두 적용할 수 있다.
+R-Tree는 ST_Contains() 또는 ST_Within() 등과 같은 포함 관계를 비교하는 함수로 검색을 수행하는 경우에만 인덱스를 이용할 수 있다.
+대표적으로 '현재 사용자의 위치로부터 반경 5km 이내의 음식점 검색' 등과 같은 검색에 사용할 수 있다.
+현재 출시되는 버전 Mysql에서는 ST_Distance(), ST_Distance_Sphere() 함수는 공간 인덱스를 효율적으로 사용 못하기에 ST_Contains() 또는 ST_Within() 이용해 거리 기반의 검색을 해야 한다.
+
+기준점 P를 기준으로 한 반경 거리 5km 이내의 위치 검색
+사각상자 안까지 포함 할 경우
+1) SELECT * FROM tb_location WHERE ST_Contains(사각 상자, px); // 1st_param에 포함 경계를 가진 도형을 명시 , 2nd_param에 포함되는 도형(점좌표)를 명시
+2) SELECT * FROM tb_location WHERE ST_Within(px, 사각 상자); // 1st_param에 포함되는 도형(점좌표)를 명시 , 2nd_param에 포함 관계를 가진 도형을 명시
+
+5km 반경 이상이지만 사각상자 안에 있을 경우
+SELECT * FROM tb_location WHERE ST_Contains(사각 상자, px)
+                           AND ST_Distance_Sphere(p, px)<=5*1000 /* 5km */; // 비교 결과를 ST_Distance_Sphere() 함수를 이용해 다시 한번 필터링
+                           
+전문 검색 인덱스
+Mysql의 B-Tree 인덱스는 실제 칼럼의 값이 1MB이더라도 1MB 전체의 값을 인덱스 키로 사용하는 것이 아니라 1,000바이트(MyISAM) 또는 3072바이트(InnoDB)까지만 잘라서 인덱스 키로 사용한다.
+문서의 내용 전체를 인덱스화해서 특정 키워드가 포함된 문서를 검색하는 전문(Full Text) 검색에는 InnoDB나 MyISAM 스토리지 엔진에서 제공하는 일반적인 용도의 B-Tree 인덱스를 사용할 수 없다.
+
+전문 검색에서는 문서 본문의 내용에서 사용자가 검색하게 될 키워드를 분석해 내고, 빠른 검색용으로 사용할 수 있게 이러한 키워드로 인덱스를 구축한다. 어근 분석, n-gram 알고리즘으로 구분
+
+어근 분석 알고리즘
 
 
 
