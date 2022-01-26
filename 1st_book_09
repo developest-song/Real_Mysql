@@ -522,12 +522,71 @@ index_merge_intersection, index_merge_sort_union, index_merge_union
 index_merge 위의 옵션을 한 번에 모두 제어 가능한 옵션
 
 인덱스 머지 - 교집합
-예제) explain select * from employees where first_name='Georgi' and emp_no between 10000 and 20000;
+예제) EXPLAIN SELECT  * FROM employees WHERE first_name='Georgi' AND emp_no BETWEEN 10000 AND 20000;
 Extra - Using intersect라고 표시된 것은 쿼리가 2개의 인덱스를 각각 검색해서 그 결과의 교집합만 반환했다는 것을 의미한다.
 2개의 인덱스 중 하나라도 효율적으로 쿼리를 처리할 수 있었다면 옵티마이저는 2개를 사용하는 실행 계획을 사용하지 않았을 것이다. 
 즉, 옵티마이저가 두 조건에 일치하는 레코드 건수를 예측해 본 결과 조건들 모두 상대적으로 많은 레코드를 가져와야 한다는 것을 알게 된 것이다.
 
 인덱스 머지 실행 계획이 아니었을 경우 처리해야하는 2가지 방식
+- 1번째 조건만 인덱스를 사용했다면 일치하는 레코드 253건을 검색한 다음 데이터 페이지에서 레코드를 찾고 emp_no 칼럼의 조건에 일치하는 레코드들만 반환하는 형태
+- 2번째 조건만 인덱스를 사용했다면 프라이머리 키를 이용해 10,000건을 읽고 1번째 조건에 일치하는 레코드만 반환하는 형태
+--> 위의 두 경우 비효율이 매우 큰 상황이어서 옵티마이저는 각 인덱스를 검색해 두 결과의 교집합만 찾아서 반환한 것이다.
 
+그런데 ix_firstname 인덱스는 프라이머리 키인 emp_no 칼럼을 자동으로 포함하고 있기 때문에 그냥 ix_firstname 인덱스만 사용하는 것이 더 성능이 좋을 것으로
+생각할 수도 있다 .그렇다면 index_merge_intersection 최적화를 비활성화하면 된다.
 
+set [GLOBAL | SESSION] optimizer_switch='index_merge_intersection=off';
 
+현재 쿼리에서만 비활성화 할 경우
+EXPLAIN 
+ SELECT /*+ SET_VAR(optimizer_switch='index_merge_intersection=off') */ * 
+   FROM employees WHERE first_name='Georgi' AND emp_no BETWEEN 10000 AND 20000;
+
+인덱스 머지 - 합집합
+Using union은 where 절에 사용된 2개 이상의 조건이 각각의 인덱스를 사용하되 OR 연산자로 연결된 경우에 사용되는 최적화다.
+예제) SELECT * FROM employees WHERE first_name='Matt' OR hire_date='1987-03-31'; -> Extra : Using union(ix_firstname, ix_hiredate)
+이는 인덱스 머지 최적화가 ix_firstname 인덱스의 검색 결과와 ix_hiredate 인덱스 검색 겨과를 Union 알고리즘으로 병합했다는 것을 의미한다. (두 집합의 합집합)
+예제에서 두 조건의 결과는 서로 중복되었을 것이지만 실제 실행 계획에서는 정렬했다는 표시는 없다. (그림 p333)
+예제 쿼리를 각각의 쿼리로 분리해서 실행 계획이나 쿼리 결과를 살펴보면 인덱스 검색을 통한 두 결과 집합이 모두 프라이머리 키로 정렬돼 있다는 것을 알 수 있다.
+이 때 우선순위 큐 알고리즘을 사용하여 프라이머리 키인 emp_no 칼럼의 중복 레코드를 걸러내는 것이다.
+* 2개의 where 조건이 or 연산자로 연결된 경우에는 둘 중 하나롣 제대로 인덱스를 사용하지 못하면 항상 풀 테이블 스캔으로밖에 처리하지 못한다.
+
+인덱스 머지 - 정렬 후 합집합
+만약 인덱스 머지 작업을 하는 도중에 결과의 정렬이 필요한 경우 Mysql 서버는 인덱스 머지 최적화의 'Sort Union' 알고리즘을 사용한다.
+예제)SELECT * FROM employees WHERE first_name='Matt' OR hire_date between'1987-03-01' and '1987-03-31';
+OR 기준으로 2개의 쿼리로 나눴을때 1번째 쿼리는 pk로 정렬 되어있고, 2번째 쿼리는 pk로 정렬되어있지 않다.
+즉, 중복제거를 위해 우선순위 큐를 사용할 수 없고 이에 따라 2번째 쿼리 부분을 pk로 정렬하고 중복 제거를 수행한다.
+위의 예와 같이 인덱스 머지 최적화에서 중복 제거를 위해 강제로 정렬을 수행해야 하는 경우 Extra에 Using sort_union 문구가 표시된다.
+
+세미 조인
+다른 테이블과 실제 조인을 수행하지는 않고, 단지 다른 테이블에서 조건에 일치하는 레코드가 있는지 없는지만 체크하는 형태의 쿼리를 세미 조인이라고 한다.
+5.7서버는 전통적으로 세미 조인 형태의 쿼리를 최적화하는 부분이 상당히 취약했다.
+예제) SELECT * 
+        FROM employees e
+       WHERE e.emp_no IN (SELECT de.emp_no 
+                            FROM dept_emp de 
+                           WHERE de.from_date='1995-01-01');
+       
+Mysql 서버에서 세미 조인 최적화 기능이 없었을 때는 위의 세미 조인 쿼리의 실행 계획은 다음과 같았다.
+일반적으로 다른 RDBMS에 익숙한 사용자였다면 dept_emp 테이블을 조회하는 서브쿼리 부분이 먼저 실행되고 그다음 employees 테이블에서 일치하는 레코드만
+검색할 것으로 기대했을 것이다. 하지만 Mysql서버는 employees 테이블을 풀 스캔하면서 한 건 한 건 서브쿼리의 조건에 일치하는지 비교했다. **** 
+
+세미 조인 형태의 쿼리와 안티 세미 조인 형태의 쿼리는 최적화 방법이 조금 차이가 있다.
+1. "= (subquery)", "IN (subquery)" 세미 조인 쿼리
+- 세미 조인 최적화
+- IN-to-EXISTS 최적화
+- MATERIALIZATION 최적화
+2. "<> (subquery)", "NOT IN (subquery)" 안티 세미 조인 쿼리
+- IN-to-EXISTS 최적화
+- MATERIALIZATION 최적화
+최근 도입된 세미 조인 최적화에 대해서만 작성한다.
+8.0부터 도입된 최적화 전략으로 
+- Table Pull-out : 사용 가능하면 항상 세미 조인보다는 좋은 성능을 내기 때문에 별도로 제어하는 옵티마이저 옵션을 제공하지 않는다.
+- Duplicate Weed-out : materialization 옵티마이저 스위치 
+- First Match : First Match 옵티마이저 옵션
+- Loose Scan : Loose Scan 옵티마이저 옵션
+- Materialization : materialization 옵티마이저 스위치
+
+semijoin 옵티마이저 옵션은 firstmatch, loosescan, materialization 옵티마이저 옵션을 한 번에 활성화하거나 비활성화할 때 사용한다.
+
+테이블 풀-아웃
