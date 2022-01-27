@@ -590,3 +590,62 @@ Mysql 서버에서 세미 조인 최적화 기능이 없었을 때는 위의 세
 semijoin 옵티마이저 옵션은 firstmatch, loosescan, materialization 옵티마이저 옵션을 한 번에 활성화하거나 비활성화할 때 사용한다.
 
 테이블 풀-아웃
+Table pullout 최적화는 세미 조인의 서브쿼리에 사용된 테이블을 아우터 쿼리로 끄집어낸 후에 쿼리를 조인 쿼리로 재작성하는 형태의 최적화이다.
+이는 서브쿼리 최적화가 도입되기 이전에 수동으로 쿼리를 튜닝하던 대표적인 방법이었다. 
+예제) 
+EXPLAIN 
+ SELECT * FROM employees e
+  WHERE e.emp_no IN ( SELECT de.emp_no FROM dept_emp de WHERE de.dept_no='d009');
+8.0 버전에서 이 쿼리의 실행 계획은 둘다 id가 1이다. id가 동일한 값을 가진다는 것은 두 테이블이 서브쿼리 형태가 아닌 조인으로 처리됐음을 의미한다.
+Table pullout 최적화는 별도로 실행 계획의 Extra 칼럼에 Using table pullout과 같은 문구가 출력되지 않는다. 
+사용여부를 확인하는 방법은 실행 계획에서 해당 테이블들의 id 칼럼 값이 같은지(Extra에 아무것도 없을 경우) 확인하는 것이 가장 간단한 방법이다.
+더 정확한 방법은 EXPLAIN 명령을 실행한 후 SHOW WARNINGS 명령으로 Mysql 옵티마이저가 재작성한 쿼리를 살펴보는 것이다.
+Table pullout이 적용된 쿼리를 SHOW WARNINGS\G 로 확인해볼 경우 IN(subquery) 형태는 사라지고 JOIN으로 쿼리가 재작성된 것을 확인할 수 있다.
+
+Table pullout 최적화의 몇 가지 제한 사항과 특성
+- 세미 조인 서브쿼리에서만 사용 가능하다.
+- 서브쿼리 부분이 UNIQUE 인덱스나 프라이머리 키 룩업으로 결과가 1건인 경우에만 사용 가능하다.
+- 적용된다고 하더라고 기존 쿼리에서 가능했던 최적화 방법이 사용 불가능한 것은 아니므로 Mysql에서 가능하다면 Table pullout 최적화를 최대한 적용한다.
+- 서브쿼리의 테이블을 아우터 쿼리로 가져와서 조인으로 풀어쓰는 최적화를 수행하는데, 만약 서브쿼리의 모든 테이블이 아우터 쿼리로 끄집어 낼 수 있다면
+  서브쿼리 자체는 없어진다.
+- Mysql에서는 "최대한 서브쿼리를 조인으로 풀어서 사용해라"라는 튜닝 가이드가 많은데, Table pullout 최적화는 사실 이 가이드를 그대로 실행하는 것이다.
+  이제부터는 서브쿼리를 조인으로 풀어서 사용할 필요가 없다.
+
+퍼스트 매치
+First Match 최적화 전략은 IN(subquery) 형태의 세미 조인을 EXISTS(subquery) 형태로 튜닝한 것과 비슷한 방법으로 실행된다.
+예제) 
+EXPLAIN
+ SELECT * 
+   FROM employees e WHERE e.first_name='Matt'
+    AND e.emp_no IN ( SELECT t.emp_no FROM titles t
+                       WHERE t.from_date BETWEEN '1995-01-01' AND '1995-01-30');
+이 쿼리의 실행계획은 id칼럼이 1로 표시되고 Extra칼럼에는 FirstMatch(e)라는 문구가 출력됐다. id칼럼이 1인것은 서브쿼리 패턴으로 실행한 것이 아닌
+조인으로 처리된 것이고, FirstMatch(e) 문구는 employees 테이블의 레코드에 대해 titles 테이블에 일치하는 레코드 1건만 찾으면 더이상의 titles 테이블 검색을
+하지 않는다는 것을 의미한다. 실제 의미론적으로는 EXISTS(subquery)와 동일하게 처리된 것이다. 하지만 FirstMatch 서브쿼리가 아니라 조인으로 풀어서 실행하면서
+일치하는 첫번째 레코드만 검색하는 최적화를 실행한 것이다. (그림 p340)
+
+First Match 최적화는 5.5에서 수행했던 최적화 방법인 IN-to-EXISTS변환과 거의 비슷한 처리 로직을 수행한다.
+
+IN-to-EXISTS에 비한 FirstMatch최적화 전략의 장점
+- 가끔은 여러 테이블이 조인되는 경우 원래 쿼리에는 없던 동등 조건을 옵티마이저가 자동으로 추가하는 형태의 최적화가 실행되기도 한다. 
+  기존의 IN-to-EXISTS 최적화에서는 이러한 동등 조건 전파가 서브쿼리 내에서만 가능했지만 FirstMatch에서는 조인 형태로 처리되기 때문에 서브쿼리뿐만 아니라
+  아우터 쿼리의 테이블까지 전파될 수 있다. 최종적으로는 FirstMatch 최적화로 실행되면 더 많은 조건이 주어지는 것이므로 더 나은 실행 계획을 수립할 수 있다.
+- IN-to-EXISTS 변환 최적화 전략에서는 아무런 조건 없이 변환이 가능한 경우에는 무조건 그 최적화를 수행했다.
+  하지만 FirstMatch 최적화에서는 서브쿼리의 모든 테이블에 대해 FirstMatch 최적화를 수행할지 아니면 일부 테이블에 대해서만 수행할지 
+  취사선택할 수 있다는 것이 장점이다.
+
+FirstMatch 최적화의 몇 가지 제한 사항과 특성
+- FirstMatch는 서브쿼리에서 하나의 레코드만 검색되면 더이상의 검색을 멈추는 단축 실행 경로이기 때문에 FirstMatch 최적화에서 서브쿼리는 그 서브쿼리가
+  참조하는 모든 아우터 테이블이 먼저 조회된 이후에 실행된다.
+- 최적화가 사용되면 실행 계획의 Extra 칼럼에는 FirstMatch(table-N) 문구가 표시된다.
+- 상관 서브쿼리(Correlated subquery)에서도 사용될 수 있다.
+- GROUP BY나 집합 함수가 사용된 서브쿼리의 최적화에는 사용될 수 없다.
+
+optimizer_switch 시스템 변수의 semijoin, firstmatch 옵션이 모두 ON이어야 사용 가능하다.
+
+루스 스캔
+
+
+
+
+
