@@ -644,8 +644,73 @@ FirstMatch 최적화의 몇 가지 제한 사항과 특성
 optimizer_switch 시스템 변수의 semijoin, firstmatch 옵션이 모두 ON이어야 사용 가능하다.
 
 루스 스캔
+세미 조인 서브쿼리 최적화의 LooseScan은 인덱스의 레코드를 건너뛰면서 필요한 부분만 읽어서 가져오는 "Using index for group-by"의 루스 인덱스 스캔과
+비슷한 읽기 방식을 사용한다.
+예제) 
+EXPLAIN
+ SELECT * FROM departments d WHERE  d.dept_no IN(
+    SELECT de.dept_no FROM dept_emp de);
+(그림 p342)
+서브쿼리에 사용된 dept_emp 테이블이 드라이빙 테이블로 실행되며, dept_emp 테이블의 프라이머리 키를 dept_no 부분에서 유니크하게 한 건씩만 읽는다.
 
+Extra칼럼엔 "LooseScan"이라는 문구가 표시된다.
+또한 실행 계획의 각 테이블에 할당된 id 칼럼의 값이 동일하게 1이라는 것은 Mysql 내부적으로는 조인처럼 처리됐다는 것을 말해준다.
 
+특성 
+LooseScan 최적화는 루스 인덱스 스캔으로 서브쿼리 테이블을 읽고, 그다음으로 아우터 테이블을 드리븐으로 사용해서 조인을 수행한다.
+그래서 서브쿼리 부분이 루스 인덱스 스캔을 사용할 수 있는 조건이 갖춰져야 사용할 수 있는 최적화다.
+mysql> SET optimizer_switch='loosecan=off'; (비활성화)
 
+구체화(Materialization)
+Materialization 최적화는 세미 조인에 사용된 서브쿼리를 통째로 구체화해서 쿼리를 최적화한다는 의미다.
+여기서 Materialization는 쉽게 표현하면 내부 임시 테이블을 생성한다는 것을 의미한다.
+예제) 
+EXPLAIN
+ SELECT *
+   FROM employees e
+  WHERE e.emp_no IN
+       (SELECT de.emp_no FROM dept_emp de
+         WHERE de.from_date ='1995-01-01');
+이 쿼리는 FirstMatch 최적화를 사용하면 employees 테이블에 대한 조건이 서브쿼리 이외에는 아무것도 없기 때문에 employees 테이블을 풀 스캔해야 할것이다.
+그래서 이런 형태의 세미 조인에서는 FirstMatch 최적화가 성능 향상에 별로 도움이 되지 않는다.
+
+옵티마이저는 이런 형태의 쿼리를 위해 서브쿼리 구체화라는 최적화를 도입했다.
+실행계획)
+id select_type   table        type   key          ref
+1  SIMPLE        <subquery2>  ALL    NULL         NULL
+1  SIMPLE        e            eq_ref PRIMARY      <subquery2>.emp_no
+2  MATERIALIZED  de           ref    ix_fromdate  const
+-> 테이블은 2개인데 실행계획이 3개 라인 = 어디선가 임시 테이블 생성
+
+구체화 최적화는 다른 서브쿼리 최적화와는 달리, 같이 서브쿼리 내에 GROUP BY절이 있어도 이 최적화 전략을 사용할 수 있다.
+
+제한 사항과 특성
+IN(subquery)에서 서브쿼리는 상관 서브쿼리가 아니어야 한다.
+서브쿼리는 GROUP BY나 집합 함수들이 사용돼도 구체화를 사용할 수 있다.
+구체화가 사용된 경우에는 내부 임시 테이블이 사용된다.
+
+semijoin, materialization 옵션 둘다 ON이어야 사용가능.
+
+중복 제거(Duplicated Weed_out)
+세미 조인 서브쿼리를 일반적인 INNER JOIN 쿼리로 바꿔서 실행하고 마지막에 중복된 레코드를 제거하는 방법으로 처리되는 최적화 알고리즘이다.
+예제)
+EXPLAIN
+ SELECT * FROM employees e
+  WHERE e.emp_no IN (SELECT s.emp_no FROM salaries s WHERE s.salary>150000);
+-> salaries 테이블의 프라이머리 키가(emp_no + from_date)이므로 salary가 150000 이상인 레코드를 salaries 테이블에서 조회하면 그 결과에는 중복된
+emp_no가 발생할 수 있다.
+
+SELECT e.*
+  FROM employees e, salaries s
+ WHERE e.emp_no=s.emp_no AND s.salary>150000
+ GROUP BY e.emp_no;
+Duplicate Weedout 최적화 알고리즘은 원본 쿼리를 위와 같이 INNER JOIN + GROUP BY 절로 바꿔서 실행하는 것과 동일한 작업으로 쿼리를 처리한다.
+
+Extra에는 Start temporary나 End temporary 문구가 포함된다.
+
+장점과 제약사항
+서브쿼리가 상관 서브쿼리라고 하더라도 사용할 수 있는 최적화다.
+서브쿼리가 GROUP BY나 집합 함수가 사용된 경우에는 사용될 수 없다.
+Duplicate Weedout은 서브쿼리의 테이블을 조인으로 처리하기 때문에 최적화할 수 있는 방법이 많다.
 
 
