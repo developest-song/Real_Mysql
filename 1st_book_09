@@ -713,4 +713,62 @@ Extra에는 Start temporary나 End temporary 문구가 포함된다.
 서브쿼리가 GROUP BY나 집합 함수가 사용된 경우에는 사용될 수 없다.
 Duplicate Weedout은 서브쿼리의 테이블을 조인으로 처리하기 때문에 최적화할 수 있는 방법이 많다.
 
+컨디션 팬아웃(condition_fanout_filter)
+조인을 실행할 때 테이블의 순서는 쿼리의 성능에 매우 큰 영향을 미친다. 예를 들어 A table과 B tablㄷ을 조인할때 A의 조건일치 레코드가 1만건
+B의 조건일치 레코드가 10건이고, A 테이블을 조인의 드라이빙 테이블로 결정하면 B 테이블을 1만번 읽어야 한다.
+그래서 Mysql 옵티마이저는 ㅕㅇ러 테이블이 조인되는 경우 가능하다면 일치하는 레코드 건수가 적은 순서대로 조인을 실행한다.
+예제1) SET optimizer_switch='condition_fanout_filter=off';
+EXPLAIN
+ SELECT
+   FROM * employees e INNER JOIN salaries s 
+     ON s.emp_no = e.emp_no
+  WHERE e.first_name='Matt'
+    AND e.hire_date BETWEEN '1985-11-21' AND '1986-11-21';
+id  table        type   key          rows  filtered   Extra
+1   e            ref    ix_firstname 233     100.00   Using where
+1   s            ref    PRIMARY      10      100.00   NULL
+
+1. employees 테이블에서 ix_firstname 인덱스르 이용해 Matt 조건에 일치하는 233건의 레코드를 검색
+2. 검색된 233 레코드중 hire_date 조건에 맞는 레코드를 걸러내는데, 실행 계획에서는 filtered 칼럼의 값이 100인 것은 옵티마이저가 233건 모두
+   hire_date 조건을 만족할 것으로 예측했다는 것을 의미
+3. 233건에 대해 salaries 테이블의 pk를 이용해 salaries 레코드를 읽는다. 
+   이때 Mysql 옵티마이저는 employees 레코드 한 건당 salaries 테이블의 레코드 10건이 일치할 것으로 예상했다.
+** 여기서 중요한 것은 employees 테이블의 rows 칼럼의 값이 233이고, filtered 칼럼의 값이 100%라는 것
+   
+예제2) SET optimizer_switch='condition_fanout_filter=on';
+-- 동일 Query --
+
+id  table        type   key          rows  filtered   Extra
+1   e            ref    ix_firstname 233      23.20   Using where
+1   s            ref    PRIMARY      10      100.00   NULL
+
+filtered 칼럼의 값이 100% -> 23.2% 
+최적화가 활성화되면서 Mysql 옵티마이저는 인덱스를 사용할 수 있는 first_name 칼럼 조건 이외의 나머지 조건(hire_date)에 대해서도 얼마나 조건을 
+충족할지를 고려했다는 뜻이다.
+
+8.0에서는 condition_fanout_filter 최적화가 활성화되면 다음과 같은 조건을 만족하는 칼럼의 조건들에 대해 조건을 만족하는 레코드의 비율을 계산할 수 있다.
+1. WHERE 조건절에 사용된 칼럼에 대해 인덱스가 있는 경우
+2. WHERE 조건절에 사용된 칼럼에 대해 히스토그램이 존재하는 경우
+
+쿼리가 간단하고 Mysql 8.0 이전에서도 쿼리 실행 계획이 잘못된 선택을 한 적이 별로 없다면, condition_fanout_filter 최적화는 성능 향상에 
+크게 도움이 되지 않을 수도 있다. Mysql 서버가 처리하는 쿼리의 빈도가 매우 높다면 실행 계획 수립에 추가되는 오버헤드가 더 크게 보일 수 있으므로
+가능하면 업그레이드를 실행하기 전에 성능 테스트를 진행하는 것이 좋다
+
+파생 테이블 머지(derived_merge)
+
+
+
+
+   
+    
+
+
+
+
+
+
+
+
+
+
 
