@@ -937,7 +937,39 @@ Heuristic 검색 최적화에는 포함돼 있다. optimizer_prune_level이 "1"�
 실제 Heuristic 조인 최적화는 조인 대상 테이블이 몇 개 되지 않더라도 상당한 성능 차이를 낸다. 
 그러므로 특별한 요건이 없다면 optimizer_prune_level을 "0"으로 설정하지 말자. ** 
 
+다음과 같이 컬럼 2개와 프라이머리 키, 그리고 보조 인덱스를 가진 테이블을 tab01부터 tab30까지 생성하고, 레코드를 2000건 정도 INSERT한다.
+테이블의 구조와 인덱스 구조를 좀 더 다양화하기 위해 몇 개의 테이블은 fd1 칼럼과 INT와 BIGINT 타입으로 생성했고, 몇 개의 테이블은 
+일부러 보조 인덱스를 제거했다. 그리고 테이블당 2000여 건 정도의 테스터 데이터를 INSERT 했다.
 
+예제)
+CREATE TABLE tab01 (
+   fd1 char(20) NOT NULL,
+   fd2 char(20) DEFAULT NULL,
+   PRIMARY KEY (fd1),
+   KEY ix_fd2 (fd2)
+   );
+
+SET SESSION optimizer_prune_level = { 0 | 1 };
+SET SESSION optimizer_search_depth = { 1 | 5 | 10 | ... | 35 | 40 | 62 } ;
+EXPLAIN 
+ SELECT *
+   FROM tab01, tab02, ... tab29, tab30
+  WHERE tab01.fd1=tab02.fd1 AND tab02.fd1 = tab03.fd2 ... tab28.fd2=tab29.fd1 AND tab29.fd1 = tab30.fd2;
+
+먼저 optimizer_prune_level 시스템 변수를 1로 고정하고, optimizer_search_depth을 1부터 5씩 증가시켜서 62까지 변화시켜가면서 위 쿼리의
+실행 계획 수립에 걸린 시간을 확인한 결과, 거의 시간 차이 없이 0.01초 이내에 완료됐다. 
+Mysql 5.1버전에서는 optimizer_prune_level을 1로 설정해서 조인 순서 결정에 Heuristic 최적화를 적용해도 optimizer_search_depth 세션 
+변숫값이 증가하면 실행 계획 수립에 1초 넘는 시간이 걸렸다. 지금처럼 optimizer_search_depth 값 변화와 관계없이 실행 계획 수립이 아주 빠르게
+처리되는 것은 Mysql 서버의 조인 최적화나 딕셔너리 정보 검색 성능이 버전이 올라감에 따라 많이 개선됐기 때문이다.
+
+이번에는 optimizer_prune_level 세션 변수를 0으로 고정하고, optimizer_search_depth 세션 변수의 값을 1부터 5씩 증가시켜먼서 실행 계획 수립에
+걸리는 시간을 확인해봤다. (그림 p369) -> 5 이후 부터 수립 소요 시간이 급증한다.
+
+Mysql 8.0 버전의 조인 최적화는 많이 개선되어 optimizer_search_depth 변수의 값에는 크게 영향받지 않는 것으로 보인다. 
+하지만 optimizer_prune_level을 0으로 설정하면 optimizer_search_depth 값 변화에 따라 실행 꼐획 수립에 소요되는 시간이 급증하는 것을 확인할 수 있다.
+예전 버전의 Mysql 서버에서는 조인 최적화와 관련된 Heuristic의 문제점이 있었지만 8.0에서는 이런 조인 최적화 관련된 휴리스틱을 비활성화할 필요가
+거의 없어졌다. optimizer_prune_level 시스템 변수의 기본값이 1이므로 조인 관련된 시스템 변수의 조정은 더이상 필요치 않을 것으로 보인다.
+    
 
 
 
