@@ -1077,6 +1077,64 @@ SELECT FOUND_ROWS() AS total_record_count; // 직전 쿼리의 대한 결과
 
 SQL_CALC_FOUND_ROWS 힌트를 사용하면 안되는 경우
 SELECT SQL_CALC_FOUND_ROWS * FROM employees WHERE first_name='Georgi' LIMIT 0, 20;
+SELECT FOUND_ROWS() AS total_record_count;
+- 한 번의 쿼리 실행으로 필요한 정보 2가지를 모두 가져오는 것처럼 보이지만 FOUND_ROWS() 함수의 실행을 위해 또 한 번의 쿼리가 필요하기 때문에 쿼리를 2번 실행해야한다.
+- SQL_CALC_FOUND_ROWS 힌트 때문에 조건을 만족하는 레코드 전부를 읽어봐야 한다. (253번) 랜덤 I/0
+
+SELECT COUNT(*) FROM employees WHERE first_name='Georgi';
+SELECT * FROM employees WHERE first_name='Georgi' LIMIT 0, 20;
+- 이 방식 또한 쿼리는 2번 실행해야 한다. 
+- 커버링 인덱스 쿼리이기 때문에 랜덤 I/O는 발생하지 않으며 필요한 건수만 가져온다.
+- 2번째 쿼리는 랜덤 I/0가 발생하긴 하지만, LIMIT 0, 20의 제한이 있기 때문에 20번만 실행한다.
+
+전기적 처리인 메모리나 CPU의 연산 작업에 비해 기계적 처리인 디스크 작업이 얼마나 느린 작업인지를 고려하면 비교할 수도 없을 만큼 SQL_CALC_FOUND_ROWS를 사용하는
+경우가 느리다는 것을 쉽게 알 수 있다. SELECT 쿼리 문장이 UNION으로 연결된 경우에는 SQL_CALC_FOUND_ROWS힌트를 사용해도 FOUND_ROWS() 함수로 정확한 레코드 건수를
+가져올 수 없다는 것도 문제다. 인덱스나 쿼리의 튜닝이 제대로 됐다면 후자의 방식이 SQL_CALC_FOUND_ROWS를 사용하는 방식보다는 빠르게 실행될 것이므로 
+SQL_CALC_FOUND_ROWS는 사용하지 않는 방향으로 추천한다 . 이는 SQL_CALC_FOUND_ROWS는 성능 향상을 위한 힌트가 아닌 개발자의 편의를 위한 힌트라 당연한 결과이다.
+
+COUNT(*) 쿼리나 칼럼값을 읽어오는 SELECT 쿼리가 적절히 튜닝되지 않았거나 WHERE 조건에 대해서 적절한 인덱스가 준비되지 않은 경우에는 SQL_CALC_FOUND_ROWS로
+처리하는 것이 빠른 경우도 있지만, 튜닝을 하는 편이 더 빠른 결과를 만들어 낼 수 있다.
+
+옵티마이저 힌트 종류
+옵티마이저 힌트는 영향 범위에 따라 다음 4개 그룹으로 나누어 볼 수 있다.
+인덱스 : 특정 인덱스의 이름을 사용할 수 있는 옵티마이저 힌트 
+테이블 : 특정 테이블의 이름을 사용할 수 있는 옵티마이저 힌트
+쿼리 블록 : 특정 쿼리 블록에 사용할 수 있는 옵티마이저 힌트로서, 특정 쿼리 블록의 이름을 명시하는 것이 아니라 힌트가 명시된 쿼리 블록에 대해서만 영향을 미치는 옵티마이저 힌트
+글로벌(쿼리 전체) : 전체 쿼리에 대해서 영향을 미치는 힌트
+
+하지만 이 구분으로 인해 힌트의 사용 위치가 달라지는 것은 아니다. 그리고 힌트에 인덱스 이름이 명시될 수 있는 경우를 인덱스 수준의 힌트로 구분하고, 테이블 이름까지만
+명시될 수 있는 경우를 테이블 수준의 힌트로 구분한다. 또한 특정 힌트는 테이블과 인덱스의 이름을 모두 명시할 수도 있지만 인덱스의 이름을 명시하지 않고 테이블 이름만
+명시할 수도 있는데, 이런 경우는 인덱스와 테이블 수준의 힌트가 된다.
+
+MAX_EXECUTION_TIME                                                                          쿼리의 실행 시간 제한                              * 글로벌
+RESOURCE_GROUP                                                                           쿼리 실행의 리소스 그룹 설정                          * 글로벌
+SET_VAR                                                                           쿼리 실행을 위한 시스템 변수 제어                            * 글로벌
+SUBQUERY                                                                           서브쿼리의 세미 조인 최적화 전량 제어                       * 쿼리 블록
+BKA, NO_BKA                                                                           BKA(Batched Key Access) 조인 사용 여부 제어             * 쿼리 블록, 테이블
+BNL, NO_BNL                                      블록 네스티드 루프 조인 사용 여부 제어 (8.0.20부터는 해시 조인 사용 여부 제어)                   * 쿼리 블록, 테이블
+DERIVED_CONDITION_PUSHDOWN,                                      외부 쿼리의 조건을 서브쿼리로 옮기는 최적화 사용 여부 제어                      * 쿼리 블록, 테이블 
+  NO_DERIVED_CONDITION_PUSHDOWN
+HASH_JOIN, NO_HASH_JOIN                                                            해시 조인 사용 여부 제어 (8.0.18까지만 사용가능)             * 쿼리 블록, 테이블
+JOIN_FIXED_ORDER                                                        FROM 절에 명시된 테이블 순서대로 조인 실행                              * 쿼리 블록
+JOIN_ORDER                                                                           힌트에 명시된 테이블 순서대로 조인 실행                    * 쿼리 블록
+JOIN_PREFIX                                                          힌트에 명시된 테이블을 조인의 드라이빙 테이블로 조인 실행                    * 쿼리 블록
+JOIN_SUFFIX                                                           힌트에 명시된 테이블을 조인의 드리븐 테이블로 조인 실행                     * 쿼리 블록
+QB_NAME                                                                           쿼리 블록의 이름 설정을 위한 힌트                             * 쿼리 블록
+SEMIJOIN, NO_SEMIJOIN                                                            서브쿼리의 세미 조인 최적화 전략 제어                          * 쿼리 블록
+MERGE, NO_MERGE                                  FROM 절의 서브쿼리나 뷰를 외부 쿼리 블록으로 병합하는 최적화를 수행할지 여부 제어                 * 테이블
+INDEX_MERGE, NO_INDEX_MERGE                                                               인덱스 병합 실행 계획 사용 여부 제어                  * 테이블, 인덱스
+MRR, NO_MRR                                                                           MRR(Multi-Range Read) 사용 여부 제어                    * 테이블, 인덱스
+NO_ICP                                                                  ICP(인덱스 컨디션 푸시다운) 최적화 전략 사용 여부 제어                   * 테이블, 인덱스
+NO_RANGE_OPTIMIZATION             인덱스 레인지 액세스를 비활성화(특정 인덱스를 사용하지 못하게 하거나, 풀 테이블 스캔 방식으로 처리)                * 테이블, 인덱스
+SKIP_SCAN, NO_SKIP_SCAN                                                                   인덱스 스킵 스캔 사용 여부 제어                       * 테이블, 인덱스
+INDEX, NO_INDEX                                        GROUP BY, ORDER BY, WHERE 절의 처리를 위한 인덱스 사용 여부 제어                         * 인덱스
+GROUP_INDEX, NO_GROUP_INDEX                                             GROUP BY 절의 처리를 위한 인덱스 사용 여부 제어                         * 인덱스
+JOIN_INDEX, NO_JOIN_INDEX                                                  WHERE 절의 처리를 위한 인덱스 사용 여부 제어                         * 인덱스
+ORDER_INDEX, NO_ORDER_IDNEX                                             ORDER BY 절의 처리를 위한 인덱스 사용 여부 제어                         * 인덱스
+
+
+
+
 
 
 
