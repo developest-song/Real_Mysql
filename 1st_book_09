@@ -1189,7 +1189,95 @@ EXPLAIN
                         FROM dept_emp de);
                         
 SUBQUERY
+서브쿼리 최적화는 세미 조인 최적화가 사용되지 못할 때 사용하는 최적화 방법으로, 서브쿼리는 다음 2가지 형태로 최적화할 수 있다.
+IN-to-EXISTS    - SUBQUERY(INTOEXISTS)
+Materialization - SUBQUERY(MATERIALIZATION)
 
+세미 조인 최적화는 주로 IN(subquery) 형태의 쿼리에 사용될 수 있지만 안티 세미 조인의 최적화에는 사용될 수 없다. 그래서 주로 안티 세미 조인 최적화에는 
+위의 2가지 최적화가 사용된다. 서브쿼리 최적화 힌트는 세미 조인 최적화 힌트와 비슷한 형태로, 서브쿼리에 힌트를 사용하거나 서브쿼리에 쿼리 블록 이름을
+지정해서 외부 쿼리 블록에서 최적화 방법을 명시하면 된다. 
+
+BNL & NO_BNL & HASHJOIN & NO_HASHJOIN
+8.0.18부터 도입된 해시 조인 알고리즘이 8.0.20부터는 블록 네스티드 루프 조인까지 대체하도록 개선됐다. 그래서 8.0.20부터는 블록 네스티드 루프 조인은
+Mysql서버에서 더 이상 사용되지 않는다. 하지만 BNL, NO_BNL 힌트는 그 이후에도 여전히 사용 가능한데 8.0.20포함 이후부터는 BNL 힌트를 사용하면 해시 조인을
+사용하도록 유도하는 힌트로 용도가 변경됐다. 대신 HASHJOIN과 NO_HASHJOIN 힌트는 8.0.18에서만 유효하며, 그 이후 버전에서는 효력이 없다. 
+EXPLAIN
+ SELECT /*+ BNL(e, de) */ *
+   FROM employees e INNER JOIN dept_emp de 
+     ON de.emp_no=e.emp_no;
+* Mysql 서버에서는 조인 조건이 되는 칼럼의 인덱스가 적절히 준비돼 있다면 해시 조인은 거의 사용되지 않는다. ex) de.emp_no  ,e.emp_no
+예제 쿼리에서 힌트가 있더라도 네스티드 루프 조인을 실행할 것이다.
+
+JOIN_FIXED_ORDER & JOIN_ORDER & JOIN_PREFIX & JOIN_SUFFIX
+Mysql 서버에서는 조인의 순서를 결정하기 위해 전통적으로 STRAIGHT_JOIN 힌트를 사용해왔다. 하지만 STRAIGHT_JOIN 힌트는 우선 쿼리의 FROM 절에 사용된
+테이블의 순서를 조인 순서에 맞게 변경해야 하는 번거로움이 있었다. 또한 STRAIGHT_JOIN은 한 번 사용되면 FROM 절에 명시된 모든 테이블의 조인 순서가
+결정되기 때문에 일부는 조인 순서를 강제하고 나머지는 옵티마이저에게 순서를 결정하게 맞기는 것이 불가능했다. 이 같은 단점을 보완하기 위해 옵티마이저
+힌트에서는 STRAIGHT_JOIN과 동일한 힌트까지 포함해서 다음과 같이 4개의 힌트를 제공한다.
+
+JOIN_FIXED_ORDER : STRAIGHT_JOIN 힌트와 동이랗게 FROM절의 테이블 순서대로 조인을 실행하게 하는 힌트
+JOIN_ORDER : FROM 절에 사용된 테이블의 순서가 아니라 힌트에 명시된 테이블의 순서대로 조인을 실행하는 힌트
+JOIN_PREFIX : 조인에서 드라이빙 테이블만 강제하는 힌트
+JOIN_SUFFIX : 조인에서 드리븐 테이블(가장 마지막에 조인돼야 할 테이블들)만 강제하는 힌트
+ex)
+/*+ JOIN_FIXED_ORDER() */
+/*+ JOIN_ORDER(d, de) */
+/*+ JOIN_PREFIX(e, de) */
+/*+ JOIN_SUFFIX(de, e) */
+
+MERGE & NO_MERGE
+예전 버전의 Mysql 서버에서는 FROM 절에 사용된 서브쿼리를 항상 내부 임시 테이블로 생성했다. 이렇게 생성된 내부 임시 테이블을 파생 테이블이라(Derived table)
+하는데, 이는 불필요한 자원 소모를 유발한다. 그래서 5.7과 8.0에서는 가능하면 임시 테이블을 사용하지 않게 FROM 절의 서브쿼리를 외부 쿼리와 병합하는 최적화를
+도입했다. 때로는 Mysql 옵티마이저가 내부 쿼리를 외부 쿼리와 병합하는 것이 나을 수도 있고, 때로는 내부 임시 테이블을 생성하는 것이 더 나은 선택일 수도 있다.
+하지만 Mysql 옵티마이저는 최적의 방법을 선택하지 못할 수도 있는데, 이때는 다음과 같이 MERGE 또는 NO_MERGE 옵티마이저 힌트를 사용하면 된다.
+
+INDEX_MERGE & NO_INDEX_MERGE
+Mysql 서버는 가능하다면 테이블당 하나의 인덱스만을 이용해 쿼리를 처리하려고 한다. 하지만 하나의 인덱스만으로 검색 대상 범위를 충분히 좁힐 수 없다면 
+Mysql 옵티마이저는 사용 가능한 다른 인덱스를 이용하기도 한다. 여러 인덱스를 통해 검색된 레코드로부터 교집합 또는 합집합만을 구해서 그 결과를 반환한다.
+이처럼 하나의 테이블에 대해 여러 개의 인덱스를 동시에 사용하는 것을 인덱스 머지라고 한다. 때로는 성능 향상에 도움이 되지만 항상 그렇지는 않을 수도 있다.
+
+NO_ICP
+인덱스 컨디션 푸시다운(Index Condition Pushdown) 최적화는 사용 가능하다면 항상 성능 향상에 도움이 되므로 Mysql 옵티마이저는 최대한 ICP기능을 사용하는
+방향으로 실행 계획을 수립한다. 그래서 옵티마이저에서는 ICP 힌트는 제공되지 않는다. 그런데 ICP로 인해 여러 실행 계획의 비용 계산이 잘못된다면 결과적으로
+잘못된 실행 계획을 수립하게 될 수도 있다.
+
+예를 들어 A 인덱스와 B 인덱스 둘 중에서 하나를 선택해야 하는 상황에서 A 인덱스에서는 ICP가 가능해서 A 인덱스를 사용하는 것이 비용이 낮게 예측됐다고 가정한다.
+그렇다면 옵티마이저는 A 인덱스를 사용하는 실행 계획을 선택할 것이다. 하지만 실제 서비스에서는 B 인덱스를 선택하는 것이 더 효율적일 수도 있다.
+이러한 경우 인덱스 선택 자체에 영향을 주는 것은 좋지 않을 선택일 수도 있다. 테이블의 데이터 분포는 항상 균등한 것이 아니기 때문에 쿼리 검색 범위에 따라
+A, B 인덱스의 효율이 달라질 수 있기 때문이다. 이때에는 ICP 최적화만 비활성화해서 조금 더 유연하고 정확하게 실행 계획을 선택하게 할 수 있다.
+예제) p 390
+# Extra 칼럼의 Using index condition 문구를 보면 기본적으로 옵티마이저가 ICP를 선택한 것을 알 수 있다. 
+# 사용 /*+ NO_ICP(employees ix_lastname_firstname) */ 
+# Extra 칼럼이 Using where만 표시 
+
+SKIP_SCAN & NO_SKIP_SCAN
+인덱스 스킵 스캔은 인덱스의 선행 칼럼에 대한 조건이 없어도 옵티마이저가 해당 인덱스를 사용할 수 있게 해주는 매우 훌륭한 최적화 기능이다. 하지만 조건이 누락된
+선행 칼럼이 가지는 유니크한 값의 개수가 많아진다면 인덱스 스킵 스캔의 성능은 오히려 더 떨어진다. 
+
+INDEX & NO_INDEX
+예전 Mysql 서버에서 사용되던 인덱스 힌트를 대체하는 용도로 제공된다. 
+인덱스 힌트                      옵티마이저 힌트
+USE INDEX                       INDEX
+USE INDEX FOR GROUP BY          GROUP_INDEX
+USE INDEX FOR ORDER BY          ORDER_INDEX
+IGNORE INDEX                    NO_IDEX
+IGNORE INDEX FOR GROUP BY       NO_GROUP_INDEX
+IGNORE INDEX FOR ORDER BY       NO_ORDER_INDEX
+
+인덱스 힌트는 특정 테이블 뒤에 사용했기 때문에 별도로 힌트 내에 테이블명 없이 인덱스 이름만 나열했다. 하지만 옵티마이저 힌트에는 테이블명도 같이 들어가야한다.
+
+예제)
+인덱스 힌트
+EXPLAIN
+ SELECT *
+   FROM employees USE INDEX(ix_firstname)
+  WHERE first_name='Matt';
+  
+옵티마이저 힌트
+EXPLAIN
+ SELECT /*+ INDEX(employees ix_firstname) */ *
+   FROM employees
+  WHERE first_name='Matt';
+  
     
  
   
