@@ -45,3 +45,79 @@ innodb_stats_persistent는 기본적으로 ON(1)이며, STATS_PERSISTENT 옵션 
 ALTER TABLE employees.employees STATS_PERSISTENT=1; 처럼 변경가능 
 
 통계 정보의 각 칼럼의 의미
+innodb_index_stats.stat_name='n_diff_pfx%' : 인덱스가 가진 유니크한 값의 개수
+innodb_index_stats.stat_name='n_leaf_pages' : 인덱스의 리프 노드 페이지 개수
+innodb_index_stats.stat_name='size' : 인덱스 트리의 전체 페이지 개수
+innodb_table_stats.n_rows : 테이블의 전체 레코드 건수
+innodb_table_stats.clustered_index_size : 프라이머리 키의 크기(InnoDB 페이지 개수)
+innodb_table_stats.sum_of_other_index_sizes : 프라이머리 키를 제외한 인덱스의 크기(InnoDB 페이지 개수)
+* sum_of_other_index_sizes의 값은 STATS_AUTO_RECALC 옵션에 따라 0으로 보일 수 있는데 
+ 이 경우 ANALYZE TABLE employees.employees; 하면 통곗값이 저장된다.
+ 
+STATS_AUTO_RECALC = 1 (테이블의 통계 정보를 5.5이전의 방식대로 자동 수집) (5.5 갱신 p398)
+                    0 (ANALYZE TABLE 명령을 실행할 때만 수집)
+                    DEFAULT ( innodb_stats_auto_recalc 시스템 설정 변수의 값으로 결정, 설정하지 않은 것과 동일 )
+innodb_stats_auto_recalc = ON (default이며, 자동 갱신)
+                           OFF (통계 정보가 자동으로 갱신되지 않음)
+
+innodb_stats_transient_sample_pages : default 8, 자동으로 통계 정보 수집이 실행될 때 8개 페이지만 
+                                      임의로 샘플링해서 분석하고 그 결과를 통계 정보로 활용함
+innodb_stats_persistent_sample_pages : default 20, ANALYZE TABLE 명령 실행 시 임의로 20개 페이지만 
+                                       샘플링해서 분석, 그 결과를 영구적인 통계 정보 테이블에 저장 및 활용함
+
+더 정확한 통계 정보를 수집하고자 한다면 innodb_stats_persistent_sample_pages에 높은 값을 설정하면 된다. (정보 수집시간 길어짐)
+
+히스토그램
+5.7 까지의 통계 정보는 단순히 인덱스된 칼럼의 유니크한 값의 개수 정도만 가지고 있었는데, 이는 옵티마이저가 최적의 실행 계획을 수립하기에는 
+많이 부족했다. 그래서 옵티마이저는 이러한 부족함을 메우기 위해 실행 계회긍ㄹ 수립할 때 실제 인덱스의 일부 페이지를 랜덤으로 가져와 참조하는
+방식을 사용했다. 8.0 버전으로 업그레이드 되면서 Mysql 서버도 드디어 칼럼의 데이터 분포도를 참조할 수 있는 히스토그램 정보를 
+활용할 수 있게 됐다.
+
+히스토그램 정보 수집 및 삭제
+8.0 버전에서 히스토그램 정보는 칼럼 단위로 관리되는데, 이는 자동으로 수집되지 않고 ANALYZE TABLE ... UPDATE HISTOGRAM 명령을 실행해
+수동으로 수집 및 관리된다. 수집된 히스토그램 정보는 시스템 딕셔너리에 함께 저장되고, Mysql 서버가 시작될 때 딕셔너리의 히스토그램 정보를 
+information_schema 데이터베이스의 column_statistics 테이블로 로드한다. 그래서 실제 히스토그램 정보를 조회하며녀 column_statistics
+테이블을 SELECT해서 참조할 수 있다.
+ex) 
+ANALYZE TABLE employees.employees UPDATE HISTOGRAM ON gender, hire_date;
+
+SELECT *
+  FROM INFORMATION_SCHEMA.COLUMN_STATISTICS 
+ WHERE SCHEMA_NAME='employees' 
+   AND TABLE_NAME ='employees'\G
+
+8.0 버전에서는 다음과 같이 2종류의 히스토그램 타입이 지원된다.
+Singleton(싱글톤 히스토그램): 칼럼값 개별로 레코드 건수를 관리하는 히스토그램으로, 
+                             Value-Based 히스토그램 또는 도수 분포라고도 불린다.
+Equi-Height(높이 균형 히스토그램) : 칼럼값의 범위를 균등한 개수로 구분해서 관리하는 히스토그램으로, 
+                                  Height-Balanced 히스토그램이라고도 불린다.
+
+히스토그램은 버킷(Bucket) 단위로 구분되어 레코드 건수나 칼럼값의 범위가 관리되는데, 싱글톤 히스토그램은 칼럼이 가지는 값별로 
+버킷이 할당되며 높이 균형 히스토그램에서는 개수가 균등한 칼럼값의 범위별로 하나의 버킷이 할당된다. 싱글톤 히스토그램은 각 버킷이 
+칼럼의 값과 발생 빈도의 비율의 2개 값을 가진다. 반면 높이 균형 히스토그램은 각 버킷이 범위 시작 값과 마지막 값, 그리고 발생 빈도율과
+각 버킷에포함된 유니크한 값의 개수 등 4개의 값을 가진다.
+(p 402, 10.1 - gender 칼럼에 생성된 싱글톤 히스토그램, 10.2 hire_date 칼럼에 생성된 높이 균형 히스토그램)
+gender - enum('M', 'F'), hire_date - date
+
+싱글톤 히스토그램은 주로 코드 값과 같이 유니크한 값의 개수가 상대적으로 적은(히스토그램의 버킷 수보다 적은) 경우 사용된다. 
+싱글톤 히스토그램에서 gender 칼럼의 값이 'M'인 레코드의 비율은 0.5998정도이며, 'F'인 레코드의 비율은 1로 표시된다. 
+그런데 히스토그램의 모든 레코드 건수 비율은 누적으로 표시된다. 그래서 gender 칼럼의 값이 'F'인 레코드의 비율은 1-0.5998이 된다.
+
+높이 균형 히스토그램은 칼럼값의 각 범위에 대해 레코드 건수 비율이 누적으로 표시된다. 그래서 히스토그램의 버킷 범위가 뒤로 갈 수록
+비율이 높아지는 것으로 보이지만, 사실은 범위별로 비율이 같은 수준에서 hire_date 칼럼의 범위가 선택된 것이다.* 
+그래프의 기울기가 일정한 것을 보면 각 범위가 비슷한 값(레코드의 건수)을 가진다는 것을 알 수 있다.
+
+ information_schema.column_statistics 테이블의 HISTOGRAM 칼럼이 가진 나머지 필드들의 의미
+sampling-rate : 히스토그램 정보를 수집하기 위해 스캔한 페이지의 비율을 저장한다.
+    샘플링 비율이 0.35라면 전체 데이터 페이지의 35%를 스캔해서 이 정보가 수집됐다는 것을 의미한다. 물론 샘플링 비율이 높아질수록 더 정확한
+    히스토그램이 되겠지만, 테이블을 전부 스캔하는 것은 부하가 높으며 시스템의 자원을 많이 소모한다. 그래서 Mysql 서버는 
+    histogram_generation_max_mem_size 시스템 변수에 설정된 메모리 크기에 맞게 적절히 샘플링 한다.
+    histogram_generation_max_mem_size 시스템 변수의 메모리 크기는 20MB로 초기화돼 있다.
+histogram-type : 히스토그램의 종류를 저장
+number-of-buckets-specified : 히스토그램을 생성할 때 설정했던 버킷의 개수를 저장. 별도로 개수를 지정하지 않았다며 기본으로 100를 사용한다.
+    버킷은 최대 1024개를 설정할 수 있지만, 일반적으로 100개의 버킷이면 충분하다고 알려져 있다.
+
+
+
+
+
