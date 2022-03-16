@@ -274,10 +274,60 @@ EXPLAIN FORMAT=JSON
 파악하는 것이다. 대표적으로 각 단위 작업의 비용이 변경되면 예상할 수 있는 결과들은 다음과 같다. 물론 다음 예시가 Mysql 서버 옵티마이저의
 실행 계획에 미치는 영향의 전부는 아니지만, 대략 코스트 모델을 이해하고 각 단위 작업의 비용 조절을 연습해볼 수 있는 기준은 될 것이다.
 
-- key_compare_cost            
-- row_evaluate_cost           
-- disk_temptable_create_cost  
-- memory_temptable_create_cost
-- io_block_read_cost          
-- memory_block_read_cost      
+- key_compare_cost 비용을 높이면 Mysql 서버 옵티마이저가 가능하면 정렬을 수행하지 않는 방향의 실행 계획을 선택할 가능성이 높아진다.            
+- row_evaluate_cost 비용을 높이면 풀 스캔을 실행하는 쿼리들의 비용이 높아지고, Mysql 서버 옵티마이저는 가능하면 인덱스 레인지 스캔을 사용하는
+  실행 계획을 선택할 가능성이 높아진다.
+- disk_temptable_create_cost와 disk_temptable_row_cost 비용을 높이면 Mysql 옵티마이저는 디스크에 임시 테이블을 만들지 않는 방향의 실행 계획을
+  선택할 가능성이 높아진다.
+- memory_temptable_create_cost와 memory_temptable_row_cost 비용을 높이면 Mysql 서버 옵티마이저는 메모리 임시 테이블을 만들지 않는 방향의 
+  실행 계획을 선택할 가능성이 높아진다.
+- io_block_read_cost 비용이 높아지면 Mysql 서버 옵티마이저는 가능하면 InnoDB 버퍼 풀에 데이터 페이지가 많이 적재돼 있는 인덱스를 사용하는
+  실행 계획을 선택할 가능성이 높아진다.
+- memory_block_read_cost 비용이 높아지면 Mysql 서버는 InnoDB 버퍼 풀에 적재된 데이터 페이지가 상대적으로 적다고 하더라도 그 인덱스를 사용할
+  가능성이 높아진다.
+  
+** 코스트 모델은 Mysql 서버가 사용하는 하드웨어와 Mysql 서버 내부적인 처리 방식에 대한 깊이 있는 지식을 필요로 한다. 이런 부분에 대해 전문적인
+지식을 가지고 있지 않다면 서비스에 사용되는 Mysql 서버의 engine_cost 테이블과 server_cost 테이블의 기본값을 함부로 변경하지 않는 게 좋다.
+기본값으로도 Mysql 서버는 20년이 넘는 시간 동안 수많은 응용 프로그램에서 잘 사용돼 왔다.
 
+실행 계획 확인
+실행 계획은 DESC, EXPLAIN으로 확인할 수 있다. 8.0부터 EXPLAIN 명령에 사용할 수 있는 새로운 옵션이 추가됐다. 
+
+실행 계획 출력 포맷
+이전 버전에서는 EXPLAIN EXTENDED, EXPLAIN PARTITIONS 명령이 구분돼 있었지만 8.0부터 통합되어 보이도록 개선되어 문법에서 제거됐다.
+8.0부터는 FORMAT 옵션을 사용하여 실행 계획의 표시 방법을 JSON, TREE, 단순 테이블 형태로 선택할 수 있다.
+ex)
+EXPLAIN             // 단순 테이블
+ SELECT * ...
+EXPLAIN FORMAT=TREE // 트리
+ SELECT * ...
+EXPLAIN FORMAT=JSON // JSON
+ SELECT * ...
+ 
+쿼리의 실행 시간 확인
+8.0.18 버전부터는 쿼리의 실행 계획과 단계별 소요된 시간 정보를 확인할 수 있는 EXPLAIN ANALYZE 기능이 추가됐다. 물론 SHOW PROFILE 명령으로
+어떤 부분에서 시간이 많이 소요되는지 확인 할 수 있지만 SHOW PROFILE 명령의 결과는 실행 계획의 단계별로 소요된 시간 정보를 보여주진 않는다.
+EXPLAIN ANALYZE 명령은 항상 결과를 TREE 포맷으로 보여주기 때문에 EXPLAIN 명령에 FORMAT 옵션을 사용할 수 없다. (예제 p414)
+
+TREE 포맷의 실행 계획에서 들여쓰기는 호출 순서를 의미하며, 실제 실행 순서는 다음 기준으로 읽으면 된다.
+
+들여쓰기가 같은 레벨에서는 상단에 위치한 라인이 먼저 실행
+들여쓰기가 다른 레벨에서는 가장 안쪽에 위치한 라인이 먼저 실행
+
+EXPLAIN ANALYZE 명령의 결과에는 단계별로 실제 소요된 시간(actual time)과 처리한 레코드 건수(rows), 반복 횟수(loops)가 표시된다.
+- actual time=0.007..0.009 : employees 테이블에서 읽은 emp_no 값을 기준으로 salaries 테이블에서 일치하는 레코드를 검색하는 데 걸린 시간(밀리초)을
+  의미한다. 이때 숫자 값이 2개가 표시되는데, 첫 번째 숫자 값은 첫 번째 레코드를 가져오는데 걸린 평균 시간(밀리초)을 의미한다. 두 번째 숫자 값은
+  마지막 레코드를 가져오는 데 걸린 평균 시간(밀리초)을 의미한다.
+- rows=10 : employees 테이블에서 읽은 emp_no에 일치하는 salaries 테이블의 평균 레코드 건수를 의미한다.
+- loops=233 : employees 테이블에서 읽은 emp_no를 이용해 salaries 테이블의 레코드를 찾는 작업이 반복된 횟수를 의미한다.
+  결국 여기서는 employees 테이블에서 읽은 emp_no의 개수가 233개임을 의미한다.
+
+actual time - 평균시간, rows - 평균 레코드 건수 -> loops 필드의 값이 1이상이기 때문에.
+매번 salaries 테이블에서 첫 번째 레코드를 가져오는 데 평균 0.007밀리초가 걸렸으며, 마지막 레코드를 읽는 데는 평균 0.009밀리초가 걸린 것을 의미한다.
+rows 필드의 값이 10이므로, 여기서는 salaries 테이블에서 emp_no를 검색해서 10개의 레코드를 모두 가져오는 데 평균 0.009밀리초가 걸린 것이다.
+
+EXPLAIN ANALYZE 명령은 EXPLAIN 명령과 달리 실행 계획만 추출하는 것이 아니라 실제 쿼리를 실행하고 사용된 실행 계획과 소요된 시간을 보여주는 것이다.
+그래서 쿼리의 실행 시간이 아주 많이 걸리는 쿼리라면 EXPLAIN ANALYZE 명령을 사용하면 쿼리가 완료돼야 실행 계획의 결과를 확인할 수 있다.
+쿼리의 실행 계획이 아주 나쁜 경우라면 EXPLAIN 명령으로 먼저 실행 계획만 확인해서 어느 정도 튜닝한 후 EXPLAIN ANALYZE 명령을 실행하는 것이 좋다. **
+
+실행 계획 분석
