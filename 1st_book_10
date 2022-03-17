@@ -331,3 +331,74 @@ EXPLAIN ANALYZE 명령은 EXPLAIN 명령과 달리 실행 계획만 추출하는
 쿼리의 실행 계획이 아주 나쁜 경우라면 EXPLAIN 명령으로 먼저 실행 계획만 확인해서 어느 정도 튜닝한 후 EXPLAIN ANALYZE 명령을 실행하는 것이 좋다. **
 
 실행 계획 분석
+Mysql 8.0 버전부터는 EXPLAIN 명령의 결과로 출력되는 실행 계획의 포맷을 기존 테이블 포맷과 JSON, TREE 형태로 선택할 수 있다. 사실 실행 계획의
+출력 포맷보다는 실행 계획이 어떤 접근 방법을 사용해서 어떤 최적화를 수행하는지, 그리고 어떤 인덱스를 사용하는지 등을 이해하는 것이 더 중요하다. 
+기존 테이블 포맷으로 출력되던 실행 계획을 이해할 수 있다면 포맷이 바뀌어도 어렵지 않게 실행 계획을 이해할 수 있을 것이다. 
+
+아무런 옵션 없이 EXPLAIN 명령을 실행하면 쿼리 문장의 특성에 따라 표 형태로 된 1줄 이상의 결과가 표시된다.
+표의 각 라인(레코드)은 쿼리 문장에서 사용된 테이블(서브쿼리로 임시 테이블을 생성한 경우 그 임시 테이블까지 포함)의 개수만큼 출력된다.
+실행 순서는 위에서 아래로 순서대로 표시된다. (UNION, 상관 서브 쿼리와 같은 경우 순서대로 표시 되지 않을 수 있음) 출력된 실행 계획에서 위쪽에 출력된
+결과일수록(id 칼럼의 값이 작을수록) 쿼리의 바깥(Outer) 부분이거나 먼저 접근한 테이블이고, 아래쪽에 출력된 결과일수록(id 칼럼의 값이 클수록) 쿼리의
+안쪽(Inner) 부분 또는 나중에 접근한 테이블에 해당한다.
+
+id 칼럼
+하나의 SELECT 문장은 다시 1개 이상의 하위(SUB) SELECT 문장을 포함할 수 있다.
+SELECT ...
+  FROM (SELECT ... FROM tb_test1) tb1, tb_test2 tb2
+ where tb1.id=tb2.id;
+-> SELECT를 분리. SELECT 키워드 단위로 구분한 것을 이 책에서 '단위 쿼리'라 표현
+SELECT ... FROM tb_test1;
+SELECT ... FROM tb1, tb_test2 tb2 WHERE tb1.id=tb2.id;
+
+실행 계획에서 가장 왼쪽에 표시되는 id 칼럼은 단위 SELECT 쿼리별로 부여되는 식별자 값이다. 이 예제 쿼리의 경우 실행 계획에서 최소 2개의 id값이 
+표시될 것이다. 하나의 SELECT문장 안에서 여러 개의 테이블을 조인하면 조인되는 테이블의 개수만큼 실행 계획 레코드가 출력되지만 같은 id 값이 부여된다.
+
+반대로 쿼리 실행 계획에서 쿼리 문장이 3개의 단위 SELECT 쿼리로 구성돼 있으면 실행 계획의 각 레코드가 각기 다른 id 값을 지닌 것을 확인할 수 있다.
+EXPLAIN
+ SELECT ( (SELECT COUNT(*) FROM employees) + (SELECT COUNT(*) FROM departments) ) AS total_count;
+-> id 1(NULL), 3(departments), 2(employees)으로 구별됨
+여기서 한 가지 주의해야 할 것은 실행 계획의 id 칼럼이 테이블의 접근 순서를 의미하지는 않는다는 것이다. 
+
+EXPLAIN FORMAT=TREE
+ SELECT * FROM dept_emp de
+  WHERE de.emp_no=(SELECT ... FROM employees e WHERE ...); 
+-> 이 경우 쿼리 실행순서는 서브쿼리인 e를 먼저 읽고 de 테이블을 실행하지만 id 칼럼은 de 1, e 2로 결정된 것을 알 수 있다.
+
+select_type 칼럼
+각 단위 SELECT 쿼리가 어떤 타입의 쿼리인지 표시되는 칼럼이다. select_type 칼럼에 표시될 수 있는 값은 다음과 같다.
+
+SIMPLE
+UNION이나 서브쿼리를 사용하지 않는 단순한 SELECT 쿼리인 경우(쿼리에 조인이 포함된 경우에도). 쿼리 문장이 아무리 복잡하더라도 실행 계획에서 SIMPLE인
+'단위 쿼리'는 하나만 존재한다. 일반적으로 제일 바깥 SELECT 쿼리의 select_type이 SIMPLE로 표시된다.
+
+PRIMARY
+UNION이나 서브쿼리를 가지는 SELECT 쿼리의 실행 계획에서 가장 바깥쪽(Outer)에 있는 단위 쿼리의 경우. SIMPLE과 마찬가지로 하나만 존재하며, 쿼리의 제일
+바깥쪽에 있는 SELECT 단위 쿼리가 PRIMARY로 표시된다.
+
+UNION
+UNION으로 결합하는 단위 SELECT 쿼리 가운데 첫 번째를 제외한 두 번째 이후 단위 SELECT 쿼리의 경우. UNION의 첫 번째 단위 SELECT은 UNION되는 쿼리 결과들을
+모아서 저장하는 임시 테이블(DERIVED)이 select_type으로 표시된다.
+
+DEPENDENT UNION
+UNION select_type과 같이 UNION이나 UNION ALL로 집합을 결합하는 쿼리에서 표시된다. 그리고 여기서 DEPENDENT는 UNION이나 UNION ALL로 결합된 단위 쿼리가
+외부 쿼리에 의해 영향을 받는 것을 의미한다. 다음의 예제 쿼리를 보면 두 개의 SELECT 쿼리가 UNION으로 결합됐으므로 select_type에 UNION이 표시된 것을 
+알 수 있다. IN 이하 서브쿼리에서는 두 개의 쿼리가 UNION으로 연결된 것을 알 수 있다. 예제 쿼리의 경우 Mysql 옵티마이저는 IN 내부의 서브 쿼리를
+먼저 처리하지 않고, 외부의 employees 테이블을 먼저 읽은 다음 서브쿼리를 실행하는데 이때 employees 테이블의 칼럼값이 서브쿼리에 영향을 준다.
+이렇게 내부 쿼리가 외부의 값을 참조해서 처리될 때 select_type에 DEPENDENT 키워드가 표시된다.
+ex)
+EXPLAIN
+ SELECT *
+   FROM employees e1 WHERE e1.emp_no IN ( SELECT e2.emp_no FROM employees e2 WHERE e2.first_name='Matt'
+                                           UNION
+                                          SELECT e3.emp_no FROM employees e3 WHERE e3.first_name='Matt' );
+결국 내부적으로는 UNION에 사용된 SELECT 쿼리의 WHERE 조건에 "e2.emp_no=e1.emp_no"와 "e3.emp_no=e1.emp_no"라는 조건이 자동으로 추가되어 실행된다.
+외부에 정의된 employees 테이블의 emp_no 칼럼이 서브쿼리에 사용되기 때문에 DEPENDENT UNION이 select_type에 표시된 것이다.
+id   select_type         table        ..., ... 
+1    PRIMARY             e1
+2    DEPENDENT SUBQUERY  e2              ~
+3    DEPENDENT UNION     e3
+NULL UNION RESULT        <union2,3>   ..., ...
+
+
+
+
