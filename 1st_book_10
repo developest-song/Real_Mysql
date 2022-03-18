@@ -399,6 +399,77 @@ id   select_type         table        ..., ...
 3    DEPENDENT UNION     e3
 NULL UNION RESULT        <union2,3>   ..., ...
 
+UNION RESULT
+UNION RESULT는 UNION 결과를 담아두는 테이블을 의미한다. 8.0 이전 버선에서는 UNION ALL이나 UNION 쿼리는 모두 UNION의 결과를 임시 테이블로 생성했는데,
+8.0 버전부터는 UNION ALL의 경우 임시 테이블을 사용하지 않도록 기능이 개선됐다. 하지만 UNION은 8.0 버전에서도 여전히 임시 테이블에 결과를 버퍼링한다.
+실행 계획상에서 임시 테이블을 가리키는 라인의 select_type이 UNION RESULT다. 단위 쿼리가 아니기 대문에 별도의 id 값은 부여되지 않고 NULL로 표시 된다.
+table에 <union1,2>로 표시 된 것은 id 값이 1인 단위 쿼리의 조회 결과와 id 값이 2인 단위 쿼리의 조회 결과를 UNION 했다는 것을 의미한다.
++ UNION대신 UNION ALL을 사용하면 임시 테이블을 버퍼링하지 않기 때문에 UNION RESULT이 필요치 않게 된다.
 
+SUBQUERY 
+여기서의 SUBQUERY는 FROM 절 이외에서 사용되는 서브쿼리만을 의미한다.
+Mysql 서버의 실행 계획에서 FROM 절에 사용된 서브쿼리는 select_type이 DERIVED로 표시되고, 그 밖의 위치에서 사용된 서브쿼리는 전부 SUBQUERY라고 표시된다.
+'파생 테이블' 이라는 단어는 DERIVED와 같은 의미로 이해하면 된다. 
 
+중첩된 쿼리(Nested Query) : SELECT에서 사용된 경우
+서브쿼리(Subquery) : WHERE 절에 사용된 경우
+파생 테이블(Derived Table) : FROM절에 사용된 경우. 일반적으로 RDBMS에서는 인라인 뷰 or 서브 셀렉트라고 부른다
+
+DEPENDENT SUBQUERY
+서브쿼리가 바깥쪽 SELECT 쿼리에서 정의도니 칼럼을 사용하는 경우 표시됨
+EXPLAIN
+ SELECT e.first_name, (SELECT COUNT(*) FROM dept_emp de, dept_manager dm WHERE de.emp_no=e.emp_no) AS cnt
+   FROM employees e
+  WHERE e.first_name='Matt';
+  
+내부 서브쿼리 결과가 외부 SELECT 쿼리의 칼럼에 의존적이기 때문에 DEPENDENT라는 키워드가 붙는다. DEPENDENT UNION과 같이 외부 쿼리가 먼저 수행된 후
+내부 쿼리가 실행돼야 하므로 일반 서브쿼리보다는 처리 속도가 느릴 때가 많다.
+
+DERIVED
+5.5까지는 서브쿼리가 FROM 절에 사용된 경우 항상 select_type이 DERIVED인 실행 계획을 만든다. 하지만 5.6부터는 옵티마이저 옵션에 따라 FROM절의
+서브쿼리를 외부 쿼리와 통합하는 형태의 최적화가 수행되고도 한다. 5.5까지는 파생 테이블에는 인덱스가 전혀 없으므로 다른 테이블과 조인할 때 성능상
+불리할 때가 많다. 그러나 5.6부터는 옵티마이저 옵션에 따라 쿼리의 특성에 맞게 임시테이블에도 인덱스를 추가해서 만들 수 있게 최적화됐다.
+
+* Mysql 서버는 버전이 업그레이드되면서 조인 쿼리에 대한 최적화는 많이 성숙된 상태다. 그래서 파생 테이블에 대한 최적화가 부족한 버전의 Mysql서버를
+사용 중일 경우, 가능하다면 DERIVED 형태의 실행 계획을 조인으로 해결할 수 있게 쿼리를 바꿔주는 것이 좋다. 8.0부터는 FROM절의 서브쿼리에 대한
+최적화도 많이 개선되어 가능하다면 불필요한 서브쿼리는 조인으로 쿼리를 재작성해서 처리한다. 하지만 옵티마이저가 처리할 수 있는 것은 한계가 있으므로 
+여전히 최적화된 쿼리를 작성하는 것은 중요하다.
+
+***** 서브쿼리를 사용하는 것보다 조인으로 사용하는 습관을 들여야 한다. *****
+
+DEPENDENT DERIVED 
+8.0 이전 버전에서는 FROM 절의 서브쿼리는 외부 칼럼을 사용할 수가 없었는데, 8.0버전부터는 래터럴 조인(LATERAL JOIN) 기능이 추가되면서 FROM 절의
+서브쿼리에서도 외부 칼럼을 참조할 수 있게 됐다. 다음 쿼리는 래터럴 조인의 가장 대표적인 활용 예제로서, employees 테이블의 레코드 1건당 salaries
+테이블의 레코드를 최근 순서대로 최대 2건까지만 가져와서 조인을 실행한다.
+ex)
+SELECT
+  FROM employees e LEFT JOIN LATERAL (SELECT *
+                                        FROM salaries s
+                                       WHERE s.emp_no=e.emp_no
+                                       ORDER BY s.from_date DESC LIMIT 2) AS s2 
+    ON s2.emp_no=e.emp_no;
+* EXPLAIN 
+id  select_type         table        type    key          Extra
+1   PRIMARY             e            ALL     NULL         Rematerialize (<derived2>)
+1   PRIMARY             <derived2>   ref     <auto_key0>  NULL
+2   DEPENDENT DERVIED   s            ref     PRIMARY      Using filesort
+- DEPENDENT DERIVED 는 래터럴 조인이 사용된 것을 의미한다. 
+
+UNCACHEABLE SUBQUERY
+하나의 쿼리 문장에 서브쿼리가 하나만 있더라도 실제 그 서브쿼리가 한 번만 실행되는 것은 아니다. 그런데 조건이 똑같은 서브쿼리가 실행될 때는 다시
+실행하지 않고 이전의 실행 결과를 그대로 사용할 수 있게 서브쿼리의 결과를 내부적인 캐시 공간에 담아둔다. 여기서 언급하는 서브쿼리 캐시는 쿼리 캐시나
+파생 테이블과는 전혀 무관한 기능이다. 
+
+- SUBQUERY는 바깥쪽의 영향을 받지 않으므로 처음 한 번만 실행해서 그 결과를 캐시하고 필요할 때 캐시된 결과를 이용한다 (p427)
+- DEPENDENT SUBQUERY는 의존하는 바깥쪽 쿼리의 칼럼의 값 단위로 캐시해두고 사용한다.
+  (딱 한 번만 캐시되는 것이 아니라 외부 쿼리의 값 단위로 캐시가 만들어지는 방식으로 처리된다.)
+  
+UNCACHEABLE SUBQUERY는 이 캐시를 사용할 수 있느냐 없느냐의 차이가 있다. 
+캐시를 사용하지 못하게 하는 요소)
+- 사용자 변수가 서브쿼리에 사용된 경우
+- NOT-DETERMINISTIC 속성의 스토어드 루틴이 서브쿼리 내에 사용된 경우
+- UUID()나 RAND()와 같이 결괏값이 호출할 때마다 달라지는 함수가 서브쿼리에 사용된 경우
+ex) @status(사용자 변수)가 사용된 경우 UNCACHEABLE SUBQUERY로 표시(p428)
+
+UNCACHEABLE UNION
 
