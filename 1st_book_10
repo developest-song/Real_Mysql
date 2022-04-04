@@ -472,4 +472,43 @@ UNCACHEABLE SUBQUERY는 이 캐시를 사용할 수 있느냐 없느냐의 차�
 ex) @status(사용자 변수)가 사용된 경우 UNCACHEABLE SUBQUERY로 표시(p428)
 
 UNCACHEABLE UNION
+UNION, UNCACHEABLE 두 개 키워드의 속성이 혼합된 select_type을 의임
+
+MATERIALIZED - 쿼리의 내용을 임시테이블로 생성 *
+5.6부터 도입된 select_type으로, 주로 FROM절이나 IN(subquery) 형태의 쿼리에 사용된 서브쿼리의 최적화를 위해 사용된다. 
+5.7부터는 서브쿼리의 내용을 임시 테이블로 구체화한 후, 임시 테이블과 employees 테이블을 조인하는 형태로 최적화되어 처리된다.
+
+table 칼럼
+Mysql 서버의 실행 계획은 단위 SELECT 쿼리 기준이 아니라 테이블 기준으로 표시된다. 테이블의 이름에 별칭이 부여된 경우에는 별칭이 표시된다.
+
+table 칼럼에 <derived N>, <union M,N> 과 같이 "<>"로 둘러싸인 이름이 명시되는 경우가 많은데, 이 테이블은 임시 테이블을 의미한다. 
+"<>" 안에 항상 표시되는 숫자는 단위 SELECT 쿼리의 id 값을 지칭한다. (p430) <derived 2> id 2의 파생 테이블
+
+id  select_type     table
+1    PRIMARY      <derived 2>
+1    PRIMARY          e
+2    DERIVED       dept_emp
+
+1. id 2인 dept_emp로 파생 테이블이 만들어짐(DERIVED)
+2. id 값이 1로 같은 두 테이블은 조인된 것이며, <derived 2>가 윗 줄이므로 드라이빙 테이블, e 테이블이 드리븐 테이블이다.
+
+실제쿼리)
+SELECT *
+  FROM (SELECT de.emp_no FROM dept_emp de GROUP BY de.emp_no) tb,
+       employees e
+ WHERE e.emp_no=tb.emp_no;
+ 
+select_type이 MATERIALIZED인 실행 계획에서는 "<subquery N>"과 같은 값이 table 칼럼에 표시된다. 이는 서브쿼리의 결과를 구체화해서
+임시 테이블로 만들었다는 의미이며, 실제로는 <derived N>과 같은 방법으로 해석하면 된다.
+
+partitions 칼럼
+5.7까지는 옵티아미저가 사용하는 파티션들의 목록은 EXPLAIN PARITION 명령을 이용해 확인 가능했지만 8.0부터는 EXPLAIN 명령으로 파티션 관련
+실행 계획까지 모두 확인할 수 있게 변경됐다. 
+우선 파티션 고나련된 실행 계획을 확인하기 전에 간단히 다음과 같은 파티션 테이블을 생성, employees 테이블의 모든 레코드를 복사한다.
+employees_2 테이블은 hire_date 칼럼값을 기준으로 5년 단위로 나누어진 파티션을 가진다. 그런데 파티션 생성 시 제약 사항(파티션 키로 사용되는
+칼럼은 프라이머리 키를 포함한 모든 유니크 인덱스의 일부여야 함)으로 인해 프라이머리 키에 emp_no 칼럼과 함께 hire_date 칼럼을 추가해서 테이블을 생성
+
+CREATE TABLE employees_2 (
+
+
 
