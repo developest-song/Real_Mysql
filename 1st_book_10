@@ -550,6 +550,7 @@ Mysql 메뉴얼에서는 type 칼럼을 "조인 타입"으로 소개한다. 또�
 
 표시되는 값
 - system, const, eq_ref, ref, fulltext, ref_or_null, unique_subquery, index_subquery, range, index_merge, index, ALL
+이 순서가 일반적인 처리 성능 순서(데이터 분포, 레코드 건수에 따라 달라질 수 있음)
 
 ALL을 제외한 나머지는 모두 인덱스를 사용하는 접근 방법이다. ALL은 풀 테이블 스캔
 index_merge를 제외한 나머지 접근 방법은 하나의 인덱스를 사용한다. index_merge 이외의 type에서는 인덱스 항목에도 단 하나의 인덱스 이름만 표시된다.
@@ -596,5 +597,68 @@ ref - 조인의 순서와 인덱스의 종류에 관계없이 동등 조건으�
 동등 비교 연산자 = "=", "<=>" ("<=>" 연산자는 NULL에 대한 비교까지 한다)
 
 fulltext
+Mysql 서버의 전문 검색 인덱스를 사용해 레코드를 읽는 접근 방법.
+전문 검색 인덱스는 통계 정보가 관리되지 않으며, 전문 검색 인덱스를 사용하려면 전혀 다른 SQL 문법을 사용해야 한다.
 
+Mysql 서버에서 전문 검색 조건은 우선순위가 상당히 높다. 쿼리에서 전문 인덱스를 사용하는 조건과 그 이외의 일반 인덱스를 사용하는 조건을 함께 사용하면 
+일반 인덱스의 접근 방법이 const나 eq_ref, ref가 아니면 일반적으로 Mysql은 전문 인덱스를 사용하는 조건을 선택해서 처리한다.
+전문 검색은 "MATCH (...) AGAINST (...)" 구문을 사용해서 실행하는데, 이때 반드시 해당 테이블에 전문 검색용 인덱스가 준비돼 있어야만 한다.
+테이블에 전문 인덱스가 없다면 쿼리는 오류를 발생하고 중지될 것이다. 전문 검색 인덱스를 사용하기 위해서는 다음과 같이 전문 검색 인덱스가 테이블에 정의돼 있어야한다.
+테이블 생성)
+CREATE TABLE employees_name (
+  emp_no int NOT NULL,
+  first_name varchar(14) NOT NULL,
+  last_name varchar(16) NOT NULL,
+  PRIMARY KEY (emp_no),
+  FULLTEXT KEY fx_name (first_name,last_name) WITH PARSER ngram
+  ) ENGINE=InnoDB;
+전문검색 조회)
+EXPLAIN
+ SELECT *
+   FROM employee_name
+  WHERE emp_no=10001
+    AND emp_no BETWEEN 10001 AND 10005
+    AND MATCH(first_name, last_name) AGAINST('Facello' IN BOOLEAN MODE);
+-> 3개의 조건을 가지고 있음.
+1. employee_name 테이블의 프라이머리 키를 1건만 조회하는 const 타입의 조건
+2. range 타입의 조건
+3. 전문검색 조건
+최종적으로 옵티마이저는 const 타입의 조건을 선택한다. 만약 const 타입 조건이 없다면 fulltext 조건을 선택한다.
+지금까지의 경험으로 보면 전문 검색 인덱스를 이용하는 fulltext보다 일반 인덱스를 이용하는 range 접근 방법이 더 빨리 처리되는 경우가 더 많았다. ***
+따라서 전문 검색 쿼리를 사용할 때는 조건별로 성능을 확인해 보는 편이 좋다. *** 
 
+ref_or_null
+이 접근 방법은 ref 접근 방법과 같은데, NULL 비교가 추가된 형태다. 접근 방법의 이름 그대로 ref 방식 또는 NULL 비교(IS NULL) 접근 방법을 의미한다.
+실제 업무에서 많이 활용되지 않지만, 만약 사용된다면 나쁘지 않은 접근 방법 정도로 기억해 두면 충분하다.
+EXPLAIN 
+ SELECT * FROM titles
+  WHERE to_date='1985-03-01' OR to_date IS NULL;
+-> type : ref_or_null
+
+unique_subquery
+WHERE 조건절에서 사용될 수 있는 IN (subquery) 형태의 쿼리를 위한 접근 방법이다. unique_subquery의 의미 그대로 서브쿼리에서 중복되지 않는 유니크한
+값만 반환할 때 이 접근 방법을 사용한다.
+EXPLAIN
+ SELECT * FROM departments
+  WHERE dept_no IN (SELECT dept_no FROM dept_emp WHERE emp_no=10001);
+
+unique_subquery와 index_subquery는 8.0에서 세미조인 최적화 옵션을 비활성화한 상태에서 만들어진 실행 계획이다.
+
+index_subquery
+IN 연산자의 특성상 IN (subquery) 또는 IN (상수 나열) 형태의 조건은 괄호 안에 있는 값의 목록에서 중복된 값이 먼저 제거돼야 한다.
+전의 unique_subquery 접근 방법은 중복 제거가 필요 하지 않았지만 중복된 값을 반환할 수도 있다.
+이때 서브쿼리 결과의 중복된 값을 인덱스를 이용해서 제거할 수 있을때 index_subquery 접근 방법이 사용된다.
+
+정리
+unique_subquery : IN (subquery) 형태의 조건에서 subquery의 반환 값에는 중복이 없으므로 별도의 중복 제거 작업이 필요하지 않음
+index_subquery : IN (subquery) 형태의 조건에서 subquery의 반환 값에 중복된 값이 있을수 있지만 인덱스를 이용해 중복된 값을 제거할 수 있음
+
+range
+range는 인덱스를 하나의 값이 아니라 범위로 검색하는 경우를 의미하는데, 주로 "<, >, IS NULL, BETWEEN, IN, LIKE" 등의 연산자를 이용해 인덱스를
+검색할 때 사용된다. 일반적으로 애플리케이션의 쿼리가 가장 많이 사용하는 접근 방법인데, 이 책에서 소개하는 접근 방법의 순서상 Mysql 서버가 가지고 있는
+접근 방법 중에서 상당히 우선순위가 낮다는 것을 알 수 있다. 얼마나 많은 레코드를 필요로 하느냐에 따라 차이는 있겠지만 range 접근 방법도 상당히 빠르며,
+모든 쿼리가 이 접근 방법만 사용해도 최적의 성능이 보장된다고 볼 수 있다. 
+
+*** const, ref, range = 인덱스 레인지 스캔(인덱스를 효율적으로 사용, 작업 범위 결정 조건으로 인덱스를 사용)
+
+index_merge
