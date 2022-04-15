@@ -833,6 +833,17 @@ Extra 칼럼에 Full scan on Null key가 표시되면서, IN 이나 NOT IN 연�
 그렇지 않다면, 풀 테이블 스캔은 발생하지 않으니 걱정하지 않아도 된다.
 
 Impossible HAVING
+쿼리에 사용된 HAVING 절의 조건을 만족하는 레코드가 없을 때 실행 계획의 Extra 칼럼에 해당 키워드가 표시된다.
+애플리케이션의 쿼리 중에서 실행 계획의 Extra 칼럼에 "Impossible HAVING" 메시지가 출력된다면 쿼리가 제대로 작성되지 못한 경우가 대부분이므로
+쿼리의 내용을 다시 점검하는 것이 좋다.
+
+Impossible WHERE
+Impossible HAVING과 비슷하며, WHERE 조건이 항상 FALSE가 될 수 밖에 없는 경우 표시된다.
+
+LooseScan
+세미 조인 최적화 중에서 LooseScan 최적화 전략이 사용될 경우 표시 된다.
+
+No matching min/max row
 
 
 
