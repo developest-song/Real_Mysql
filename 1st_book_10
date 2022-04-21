@@ -928,8 +928,26 @@ ex) index map: 0x19 -> 비트값 11001 -> 5번째 자리 인덱스 ... 첫번째
 실제 어떤 인덱스가 사용됐는지는 알 수 없다. 단지 각 비트맵의 자릿수가 1인 순번의 인덱스가 대상이라는 것만 알 수 있다.
 
 Recursive
+8.0 버전부터는 CTE(Common Table Expression)를 이용해 재귀 쿼리를 작성할 수 있게 됐다. Mysql 서버에서 재귀 쿼리는 다음 예제와 같이 WITH 구문을
+이용해 CTE를 사용하면 된다.
+WITH RECURSIVE cte (n) AS
+  (
+    SELECT 1
+    UNION ALL
+    SEELCT n + 1 FROM cte WHERE n < 5
+  )
+  SELECT * FROM cte;
+위 쿼리의 WITH 절에서 실행하는 작업은 다음과 같다.
+1. "n"이라는 칼럼 하나를 가진 cte라는 이름의 내부 임시 테이블을 생성
+2. "n"칼럼의 값이 1부터 5까지 1씩 증가하게 해서 레코드 5건을 만들어서 cte 내부 임시 테이블에 저장
+EXPLAIN)
+id select_type  table       type   key    Extra
+1  PRIMARY      <derived2>  ALL    NULL   NULL
+2  DERIVED      NULL        NULL   NULL   No tables used
+3  UNION        cte         ALL    NULL   Recursive; Using where
+-> WITH구문을 이용한 CTE가 사용된다고 Recursive 문구가 표시되는 것은 아니고 WITH 구문이 재귀 CTE로 사용될 경우만 표시된다. 
 
-
+Rematerialize
 
 
 
