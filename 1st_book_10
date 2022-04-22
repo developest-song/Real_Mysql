@@ -948,6 +948,28 @@ id select_type  table       type   key    Extra
 -> WITH구문을 이용한 CTE가 사용된다고 Recursive 문구가 표시되는 것은 아니고 WITH 구문이 재귀 CTE로 사용될 경우만 표시된다. 
 
 Rematerialize
+8.0부터는 래터럴 조인 기능이 추가됐는데, 이 경우 래터럴로 조인되는 테이블은 선행 테이블의 레코드별로 서브쿼리를 실행해서 그 결과를 임시 테이블에
+저장한다. 이 과정을 Rematerializing이라고 한다. (매번 임시 테이블이 새로 생성) 11.4.7.6 래터럴 조인 참조
+
+Select tables optimized away
+MIN(), MAX()만 SELECT 절에 사용되거나 GROUP BY로 MIN(), MAX()를 조회하는 쿼리가 인덱스를 오름차순 또는 내림차순으로 1건만 읽는 형태의 최적화가
+적용된다면, Extra 칼럼에 "Select tables optimized away"가 표시된다.
+
+또한 MyISAM 테이블에 대해서는 GROUP BY 없이 COUNT(*)만 SELECT할 때도 이런 형태의 최적화가 적용된다. MyISAM 테이블은 전체 레코드 건수를 별도로
+관리하기 때문에 인덱스나 데이터를 읽지 않고도 전체 건수를 빠르게 조회할 수 있다. 하지만 MyISAM 테이블에서 WHERE 조건절이 있는 쿼리는 이런
+최적화를 사용하지 못한다. 
+
+
+Start temprorary, End temporary
+세미 조인 최적화 중에서 Duplicate Weed-out 최적화 전략이 사용되면 표시된다. 이 전략은 불필요한 중복 건을 제거하기 위해서 내부 임시 테이블을
+사용하는데, 이때 조인되어 내부 임시 테이블에 저장되는 테이블을 식별할 수 있게 조인의 첫 번째 테이블에 Start temporary 문구를 보여주고 조인이
+끝나는 부분에 End temporary 문구를 표시해준다.
+
+unique row not found
+두 개의 테이블이 각각 유니크(PK 키 포함)칼럼으로 아우터 조인을 수행하는 쿼리에서 아우터 테이블에 일치하는 레코드가 존재하지 않을 때 Extra 칼럼에
+이 코멘트가 표시된다. ( p474 )
+
+Using filesort
 
 
 
