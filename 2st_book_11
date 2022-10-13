@@ -1,0 +1,57 @@
+<쿼리 작성 및 최적화>
+
+쿼리 작성과 연관된 시스템 변수
+대소문자 구분, 문자열 표기 방법 등과 같은 SQL 작성 규칙은 MySQL 서버의 시스템 설정에 따라 달라진다. 
+
+SQL 모드
+sql_mode라는 시스템 설정에는 여러 개의 값이 동시에 설정될 수 있다.
+* sql_mode 시스템 변수 설정 값들은 SQL 문장 작성 규칙뿐만 아니라 MySQL 서버 내부적으로 자동 실행되는 데이터 타입 변환 및 기본값 제어 등과 
+관련된 옵션도 가지고 있다. 그래서 일단 MySQL 서버에 사용자 테이블을 생성하고 데이터를 저장하기 시작했다면 가능한 한 변수의 내용을 변경하지 않는 것이 좋다.
+그리고 하나의 복제 그룹에 속한 모든 MySQL 서버들은 동일한 sql_mode 시스템 변수를 유지하는게 좋다. 
+
+STRICT_ALL_TABLES & STRICT_TRANS_TABLES
+Mysql서버에서 INSERT나 UPDATE 문자으로 데이터를 변경하는 경우 칼럼의 타입과 저장되는 값의 타입이 다를 때 자동으로 타입 변경을 수행한다. 이때 타입이 적절히 변환되기
+어렵거나 칼럼에 저장될 값이 없거나 값의 길이가 칼럼의 최대 길이보다 큰 경우 Mysql 서버가 INSERT, UPDATE문장을 계속 실행할지, 아니면 에러를 발생시킬지를 결정한다.
+STRICT_TRANS_TABLES 옵션은 InnoDB 같은 트랜잭션을 지원하는 스토리지 엔진에만 엄격한 모드를 적용하며,
+STRICT_ALL_TABLES 옵션은 트랜잭션 지원 여부와 무관하게 모든 스토리지 엔진에 대해 엄격한 모드를 적용한다. 
+
+ANSI_QUOTES
+Mysql에서는 문자열 값(리터럴)을 표현하기 위해 홑따옴표, 쌍따옴표를 동시에 사용할 수 있다.
+하지만 Oracle의 경우 홑따옴표를 문자열 값 표기시, 쌍따옴표는 칼럼명이나 테이블명과 같은 식별자를 구분하는 용도로만 사용한다. 
+ANSI_QUOTES사용시 Oracle과 같이 표기한다.
+
+ONLY_FULL_GROUP_BY
+Mysql의 쿼리에서는 GROUP BY 절에 포함되지 않은 칼럼이더라도 집합 함수의 사용 없이 그대로 SELECT 절이나 HAVING 절에 사용할 수 있다.
+위의 시스템 변수 사용시 SQL 문법에 제한을 주게 된다. 8.0부터는 해당 변수의 활성화가 기본값이다.
+
+PIPE_AS_CONCAT
+Mysql에서는 || 는 OR 연산자와 같은 의미로 사용된다. PIPE_AS_CONCAT을 사용 시 Oracle과 같이 문자열 연결 연산자로 사용할 수 있다.
+
+PAD_CHAR_TO_FULL_LENGTH
+Mysql에서는 CHAR 타입이라고 하더라도 VARCHAR와 같이 유효 문자열 뒤의 공백 문자는 제거되어 반환된다. 하지만 CHAR 타입의 칼럼값을 가져올 떄 뒤쪽의 공백이 제거되지
+않고 반환돼야 한다면 sql_mode 시스템 설정에 PAD_CHAR_TO_FULL_LENGTH를 추가하면 된다. 
+
+NO_BACKSLASH_ESCAPES
+Mysql에서도 일반적인 프로그래밍 언어에서처럼 역슬래시 문자를 이스케이프 문자로 사용할 수 있다. 해당 변수 사용시 이스케이프 용도로 사용할 수 없다.
+
+IGNORE_SPACE
+Mysql에서는 스토어드 프로시저나 함수의 이름 뒤에 공백이 있으면 "스토어드 프로시저나 함수가 없습니다"라는 에러가 출력될 수도 있다.
+Mysql에서는 스토어드 프로시저나 함수명과 괄호 사이에 있는 공백까지도 스토어드 프로시저나 함수의 이름으로 간주한다. 이 동작 방식이 기본 모드이므로 몇 번이고 함수가
+있는지 확인하기도 한다. sql_mode 시스템 변수에 IGNORE_SPACE를 추가하면 프로시저나 함수명과 괄호 사이의 공백은 무시한다. IGNORE_SPACE 옵션은 Mysql 서버의 
+내장 함수에만 적용되며, 옵션 활성화 시 Mysql의 내장 함수는 모두 예약어로 간주되어 테이블이나 칼럼의 이름으로 사용될 수 없다.
+
+REAL_AS_FLOAT
+Mysql 서버에서는 부동 소수점 타입은 FLOAT과 DOUBLE 타입이 지원되는데, REAL 타입은 DOUBLE 타입의 동의어로 사용된다. 하지만 REAL_AS_FLOAT 모드가 활성화 시
+Mysql 서버는 REAL이라는 타입이 FLOAT 타입의 동의어로 바뀐다.
+
+NO_ZERO_IN_DATE & NO_ZERO_DATE
+이 두 옵션이 활성화될 시 DATE, DATETIME 타입의 칼럼에 "2020-00-00" OR "0000-00-00"과 같은 잘못된 날짜를 저장하는 것이 불가능해진다.
+
+ANSI
+위의 여러가지 옵션을 조합해서 SQL표준에 맞게 동작하게 만들어준다
+ANSI모드는 (REAL_AS_FLOAT, PIPE_AS_CONCAT, ANSI_QUOTES, IGNORE_SPACE, ONLY_FULL_GROUP_BY) 모드의 조합으로 구성된 모드다.
+
+TRADITIONAL
+STRICT_ALL_TABLES & STRICT_TRANS_TABLES과 비슷하지만 조금 더 엄격한 방식으로 작동한다.
+(STRICT_ALL_TABLES, STRICT_TRANS_TABLES, NO_ZERO_IN_DATE, NO_ZERO_DATE, ERROR_FOR_DIVISION_BY_ZERO, NO_ENGINE_SUBSTITUTION)모드의 조합으로 구성된 모드다.
+TRADITIONAL 모드가 활성화되면 TRADITIONAL 모드가 아닐 때 경고로 처리되던 상황이 모두 에러로 바뀌고 SQL 문장은 실패한다.
