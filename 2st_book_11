@@ -199,7 +199,55 @@ ex) WHERE emp_no=10001 AND from_date>SYSDATE(); 의 경우 <pk는 emp_no, from_d
 이미 sysdate() 함수를 사용하고 있다면 Mysql 서버의 설정파일에 sysdate-is-now 시스템 변수를 넣어서 활성화하는 것이 이 같은 문제점을 제거하는
 빠른 해결책이다. 
 
-p27
+DATE_FORMAT(NOW(), '%Y-%m-%d')
+
+STR_TO_DATE(NOW(), '%Y-%m-%d')
+문자열을 DATETIME 타입으로 변환할 때 사용
+
+DATE_ADD(NOW(), INTERVAL 1 DAY)
+DATE_SUB(NOW(), INTERVAL 1 DAY)
+DAY자리에 대신 사용할 수 있는 단위 
+YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, MICROSECOND, QUARTER(분기), WEEK
+
+UNIX_TIMESTAMP()
+'1970-01-01 00:00:00'으로부터 경과된 초의 수를 반환하는 함수
+인자가 없을 경우 현재 날짜, 시간의 타임스탬프 값을 전달
+
+FROM_UNIXTIME()
+인자로 전달한 타임스탬프 값을 DATETIME 타입으로 변환하는 함수다.
+
+TIMESTAMP 타입은 4바이트 숫자 타입으로 저장되기 때문에 '1970-01-01 00:00:01' ~ '2038-01-09 03:14:07' 까지의 날짜 값만 가능하다.
+
+RPAD LPAD
+문자열의 좌측, 우측 문자를 덧붙여서 지정된 길이의 문자열로 만드는 함수. 
+ex) RPAD('Cloee', 10, '_') -> Cloee_____
+    LPAD('123',6,'0') -> 000123
+
+RTRIM LTRIM TRIM
+문자열의 좌측, 우측에 연속된 공백문자(space, newline, tab)를 제거하는 함수. TRIM은 양쪽 다 수행한다.
+
+CONCAT
+여러 개의 문자열을 연결해서 하나의 문자열로 반환하는 함수, 인자 개수 제한이 없다. CAST() 함수를 이용해 숫자를 문자열로 변환하여 사용하는 편이 안전하다.
+ex) CONCAT('A','B',CAST(1 AS CHAR)) -> AB1
+
+CONCAT_WS(',','A','B') -> A,B (첫 인자의 구분자가 들어간다)
+
+GROUP BY 문자열 결합(GROUP_CONCAT) 
+그룹 함수 중 하나이다. 주로 GROUP BY와 함께 사용하며, GROUP BY가 없는 SQL에서 사용하면 단 하나의 결괏값만 만들어낸다. 
+값들을 먼저 정렬한 후 연결하거나 각 값의 구분자 설정도 가능하며, 여러 값 중에서 중복을 제거하고 연결하는 것도 가능하다.
+ex)
+SELECT GROUP_CONCAT(dept_no) FROM departments;
+-> d009,d005,d002 ...
+SELECT GROUP_CONCAT(dept_no SEPARATOR '|') FROM departments;
+-> d009|d005|d002 ...
+SELECT GROUP_CONCAT(dept_no ORDER BY emp_no DESC) FROM departments; // 정렬 후 연결(함수 내에서 정의된 ORDER BY는 쿼리 전체적으로 설정값과 무관하다)
+SELECT GROUP_CONCAT(DISTINCT dept_no ORDER BY emp_no DESC) FROM departments; // 중복 제거 및 정렬 후 연결
+
+p34
+
+
+
+
 
 
 
