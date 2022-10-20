@@ -243,7 +243,47 @@ SELECT GROUP_CONCAT(dept_no SEPARATOR '|') FROM departments;
 SELECT GROUP_CONCAT(dept_no ORDER BY emp_no DESC) FROM departments; // 정렬 후 연결(함수 내에서 정의된 ORDER BY는 쿼리 전체적으로 설정값과 무관하다)
 SELECT GROUP_CONCAT(DISTINCT dept_no ORDER BY emp_no DESC) FROM departments; // 중복 제거 및 정렬 후 연결
 
-p34
+GROUP_CONCAT() 함수는 지정한 칼럼의 값들을 연결하기 위해 제한적인 메모리 버퍼 공간을 사용한다. 
+지정된 크기를 초과할 경우 경고 메시지가 발생하며 GUI 도구(TOAD, SQLyog)를 이용할 경우 단순히 경고만 발생하고, JDBC로 실행할 경우에는 ERROR로 취급되어
+쿼리를 실패하기에 GROUP_CONCAT()의 결과가 지정된 버퍼 크기를 초과하지 않게 주의해야 한다.
+group_concat_max_len 시스템 변수로 메모리 버퍼의 크기를 조정할 수 있다. default는 1KB이다.
+8.0부터는 용도에 맞게 래터럴 조인이나 윈도우 함수를 이용할 수 있다. (p34)
+
+CASE WHEN THEN END (SWITCH와 비슷한 용도)
+
+CAST,CONVERT 
+PrePared Statement를 제외하면 SQL은 텍스트 기반으로 작동하기 때문에 SQL에 포함된 모든 입력값은 문자열처럼 취급된다. 명시적으로 타입의 변환이 필요할 때
+CAST()를 사용하면 되며, CONVER() 도 거의 비슷하며 함수의 인자 사용 규칙만 조금 다르다.
+CAST() - DATE, TIME, DATETIME, BINARY, CHAR, DECIMAL, SIGNED INTEGER, UNSIGNED INTEGER
+ex) CAST('1234' AS SIGNED INTEGER)
+CONVERT()
+1) 타입을 변환하는 용도 ex) CONVERT(1-2, UNSIGNED)
+2) 문자열의 문자 집합을 변환하는 용도 ex) CONVERT('ABC' USING 'utf8mb4')
+
+이진값과 16진수 문자열 변환 
+HEX() 함수는 이진값을 사람이 읽을 수 있는 형태의 16진수의 문자열(HEX String)로 변환하는 함수
+UNHEX() 함수는 16진수의 문자열을 읽어서 이진값으로 변환하는 함수다. 이진값 = 바이너리 값
+
+암호화 및 해시 함수
+MD5와 SHA 모두 비대칭형 암호화 알고리즘인데, 인자로 전달한 문자열을 각각 지정된 비트 수의 해시 값을 만들어내는 함수다.
+SHA() - SHA-1 암호화 알고리즘을 사용하며, 결과로 160비트(20바이트) 해시 값을 반환한다.
+SHA2() - SHA 암호화 알고리즘보다 더 강력한 224비트부터 512비트 암호화 알고리즘을 사용해 생성된 해시 값을 반환한다.
+MD5() - 메시지 다이제스트 알고리즘을 사용해 128비트 해시 값을 반환한다.
+
+함수들 모두 사용자의 비밀번호와 같은 암호화가 필요한 정보를 인코딩하는 데 사용되며, 특히 MD5() 함수는 말그대로 입력된 문자열의 길이를 줄이는(Digest) 용도로도
+사용된다. SHA, MD5 두 함수의 출력 값은 16진수 문자열 형태이기 떄문에 저장하려면 저장 공간이 각각 20바이트와 16바이트의 두 배로 필요하다. 
+그리고 SHA2 함수는 사용된 인자 값에 따라 출력되는 해시 값의 길이가 달라지므로 사용된 이자의 두 배가 필요하다. 
+그래서 암호화된 값을 저장해 두기 위해 
+MD5() - CHAR(32)
+SHA() - CHAR(40) 의 타입을 필요로 한다.
+저장공간을 원래의 16바이트, 20바이트로 줄이고 싶다면 CHAR, VARCHAR가 아닌 BINARY, VARBINARY 형태의 타입에 저장하면 된다.
+이 때는 칼럼의 타입을 BINARY(16) or (20)으로 정의하고 MD5(), SHA() 함수의 결과를 UNHEX() 함수를 이용해 이진값으로 변환해서 저장하면 된다.
+BINARY 타입에 저장된 이진값을 사람이 읽을 수 있는 16진수 문자열로 다시 되돌릴 떄는 HEX() 함수를 사용하면 된다. 예제 (p40)
+
+
+
+
+
 
 
 
