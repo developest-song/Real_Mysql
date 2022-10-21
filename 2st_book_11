@@ -280,6 +280,75 @@ SHA() - CHAR(40) 의 타입을 필요로 한다.
 이 때는 칼럼의 타입을 BINARY(16) or (20)으로 정의하고 MD5(), SHA() 함수의 결과를 UNHEX() 함수를 이용해 이진값으로 변환해서 저장하면 된다.
 BINARY 타입에 저장된 이진값을 사람이 읽을 수 있는 16진수 문자열로 다시 되돌릴 떄는 HEX() 함수를 사용하면 된다. 예제 (p40)
 
+MD5() 함수나 SHA(), SHA2() 함수는 모두 비대칭형 암호화 알고리즘이다. 이 함수들의 결괏값은 중복 가능성이 매우 낮기 때문에 길이가 긴 데이터를 크기를 줄여서
+인덱싱(해시)하는 용도로도 사용된다. 예를들어, URL 같은 값은 1KB를 넘을 떄도 있으며 전체적으로 값의 길이가 긴 편이다. 이러한 데이터를 검색하려면 인덱스가 
+필요하지만 긴 칼럼에 대해 전체 값으로 인덱스를 생성하는 것은 불가능 할뿐만아니라 공간 낭비도 커진다. 
+**URL의 값을 MD5() 함수로 단축하면 16바이트로 저장할 수 있고, 이 16바이트로 인덱스를 생성하면 되기 때문에 상대적으로 효율적이다.
+
+Mysql 8.0 부터는 함수 기반의 인덱스를 생성하면 별도 칼럼을 추가하지 않아도 된다. 해시 칼럼 적용 예제(p41,42) INDEX ix_accessurl ( (MD5(access_url)) )
+저장공간을 더 줄이고자 하면 UNHEX() 함수를 사용해 이진값으로 만들면 된다. 131byte -> 67byte
+
+처리 대기(SLEEP)
+SQL의 개발이나 디버깅 용도로 잠깐 대기하거나 일부러 쿼리의 실행을 오랜 시간 유지하고자 할 때 상당히 유용한 하뭇다.
+초 단위로 인자를 받으며, 지정 시간 만큼만 대기한다. ex) SELECT SLEEP(1.5) FROM employees ; -> 결과가 10건이라면 * 1.5로 15초동안 대기하게 된다.
+
+벤치 마크(BENCHMARK)
+디버깅이나 간단한 함수의 성능 테스트용으로 아주 유용한 함수다. 
+ex) SELECT BENCHMARK(10000, MD5('abcdef')); -> 반복할 횟수, 반복할 표현식(1개의 결과값을 반환하는 표현식)
+하지만 반복실행에서의 맹점은 쿼리 파싱, 최적화, 테이블 잠금, 네트워크 비용 등이 1번만 소용된다는 점이다.
+해당 함수로 얻은 쿼리나 함수의 성능은 그 자체로는 큰 의미가 없으며, 두 개의 동일 기능을 상대적으로 비교 분석하는 용도로 사용할 것을 권장한다.
+
+IP 주소 변환(INET_ATON, INET_NTOA)
+IP 주소는 4바이트의 Unsigned Integer이다. 하지만 대부분의 DBMS에서는 IP정보를 VARCHAR(15)에 '.'으로 구분해서 저장한다. 
+이렇게 문자열로 저장된 IP주소는 저장 공간을 훨씬 많이 필요로 한다. 그리고 A,B,C의 클래스로 구분하는 것도 불가능하다. 
+INET_ATON, INET_NTOA은 IPv4 주소를 문자열이 아닌 부호 없는 정수 타입에 저장할 수 있게 제공한다. 
+ATON은 문자열 -> 정수형 NTOA는 정수형 -> 문자열로 변환하는 함수다.
+IPv6는 INET6_ATON, INET6_NTOA으로 변환할 수 있으며, IPv4, IPv6 주소를 HEX,UNHEX()를 사용하여 바이너리로의 변환이 가능하다. 
+IPv4를 위해서는 VARBINARY(4) IPv6를 위해서는 VARBINARY(16)을 사용하면 된다.
+
+JSON 포맷(JSON_PRETTY)
+단순 텍스트 포맷을 JSON_PRETTY()를 통해 읽기 쉬운 포맷으로 변환해준다.
+
+JSON 필드 크기(JSON_STORAGE_SIZE)
+JSON 데이터는 텍스트 기반이지만 Mysql 서버는 디스크의 저장 공간을 절약하기 위해 JSON 데이터를 실제 디스크에 저장할 때 BSON(Binary JSON) 포맷을 사용한다.
+하지만 BSON으로 변환 됐을 때 저장 공간의 크기 예측하기 어렵고, 그 해결책으로 JSON_STORAGE_SIZE() 함수를 제공한다. 반환 단위는 Byte이다.
+
+
+JSON 필드 추출(JSON_EXTRACT)
+첫 번째 인자는 JSON 데이터가 저장된 칼럼 또는 JSON 도큐먼트 자체이며, 
+두 번째 인자는 가져오고자 하는 필드의 JSON 경로를 명시한다.
+
+SELECT emp_no, JSON_EXTRACT(doc, "$.first_name") FROM employees_docs;
+SELECT emp_no, JSON_UNQUOTE(JSON_EXTRACT(doc, "$.first_name")) FROM employees_docs; -> ""없이 가져올 수 있음 
+
+해당 위의 함수는 JSON 처리의 아주 기본적인 처리이기 때문에 사용자의 편의성을 위해 JSON 연산자를 제공한다.
+SELECT emp_no, doc->"$.first_name" FROM employee_docs;
+SELECT emp_no, doc->>"$.first_name" FROM employee_docs; -> ""없이 가져올 수 있음
+
+JSON 오브젝트 포함 여부 확인(JSON_CONTAINS)
+JSON 도큐먼트 또는 지정된 JSON 경로에 JSON 필드를 가지고 있는지를 확인하는 함수다. 
+ex) 1) SELECT emp_no FROM employee_docs WHERE JSON_CONTAINS(doc, '{"first_name":"Christian"}'); 
+    2) SELECT emp_no FROM employee_docs WHERE JSON_CONTAINS(doc, '"Christian"', '$.first_name');
+첫번째 인자 - 저장하고 있는 칼럼이나 JSON 도큐먼트
+두번째 인자 - JSON 오브젝트(도큐먼트 또는 필드 값)
+세번째 인자(선택) - JSON 경로
+
+JSON 오브젝트 생성(JSON_OBJECT)
+SELECT JSON_OBJECT("empNo", emp_no, "salary", salary, "fromDate", from_date,"toDAte", to_date) AS as_json FROM salaries LIMIT 3;
+
+JSON 칼럼으로 집계(JSON_OBJECTAGG & JSON_ARRAYAGG) - JSON_OBJECTAGG. 키 값, JSON_ARRAYAGG. 배열
+GROUP BY 절과 함께 사용되는 집계 함수로서 RDBMS 칼럼의 값들을 모아 JSON 배열 또는 도큐먼트를 생성하는 함수다. 예제(p50)
+
+JSON 데이터를 테이블로 변환(JSON_TABLE)
+반환하는 테이블의 레코드 건수는 원본 테이블(JSON_TABLE() 함수 직전에 명시된 테이블)과 동일한 레코드 건수를 가진다.
+from JSON_TABLE(doc,"$" COLUMNS (emp_no INT PATH "$.emp_no",
+                                 gender CHAR(1) PATH "$.gender", 
+                                 first_name VARCHAR(20) PATH "$.first_name") as e
+JSON_TABLE() 함수는 항상 내부 임시 테이블을 이용하기 때문에 임시 테이블에 레코드가 많이 저장되지 않게 주의 해야 한다.
+
+P52
+
+
 
 
 
