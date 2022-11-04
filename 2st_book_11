@@ -399,9 +399,43 @@ first_name은 index가 있고 last_name은 index가 없는 경우 AND로 연결�
 만약 각각 index가 있다면 index_merge 접근 방법으로 실행할 수 있다.
 
 GROUP BY 절의 인덱스 사용
+GROUP BY절에 명시된 칼럼의 순서가 인덱스를 구성하는 칼럼의 순서와 같으면 GROUP BY 절은 일단 인덱스를 이용할 수 있다.
+예외) WHERE 조건절에 인덱스를 구성하는 칼럼이 동등 비교 조건으로 사용된다면 해당 칼럼이 빠져도 인덱스를 이용한 GROUP BY가 가능할 때도 있다.
+인덱스 (COL_1, COL_2, COL_3, COL_4) 일 때
+WHERE COL_1='상수' ... GROUP BY COL_2, COL_3
+COL_1은 상숫값과 비교되므로 GROUP BY COL_1, COL_2, COL_3과 같은 결과를 만들어 낸다.
 
-p58
-  
+ORDER BY 절의 인덱스 사용
+ORDER BY는 GROUP BY와 상당히 비슷하며, 요건도 거의 흡사하다. 하지만 조건이 하나 더 있는데, 정렬되는 각 칼럼의 오름차순, 내림차순 옵션이 인덱스와
+같거나 정반대인 경우에만 사용할 수 있다는 것이다.
+Mysql의 인덱스는 모든 칼럼이 오름차순으로만 정렬돼 있기 때문에 ORDER BY 절의 모든 칼럼이 오름차순이거나 내림차순일 때만 인덱스를 사용할 수 있다.
+
+WHERE 조건과 ORDER BY(또는 GROUP BY)절의 인덱스 사용
+SQL 문장이 WHERE 절과 ORDER BY 절을 가지고 있다고 가정했을 때 WHERE 조건은 A인덱스를 사용하고 ORDER BY는 B인덱스를 사용하도록 쿼리가 실행될 수는 없다.
+GROUP BY 또한 마찬가지이다.
+WHERE, ORDER BY절이 같이 사용된 하나의 쿼리 문장은 다음 3가지 중 한 가지 방법으로만 인덱스를 이용한다..
+1) WHERE 절과 ORDER BY 절이 동시에 같은 인덱스를 이용
+2) WHERE 절만 인덱스를 이용 (별도의 정렬 처리 방식, Using Filesort)
+3) ORDER BY 절만 인덱스를 이용 - WHERE 절은 인덱스를 이용하지 못할 때, 이 방식은 ORDER BY 절의 순서대로 인덱스를 읽으면서 레코드 한 건씩 WHERE 절의
+조건에 일치하는지 비교하고, 일치하지 않을 때는 버리는 형태로 처리한다. 주로 아주 많은 레코드를 조회해서 정렬해야 할 때는 이런 형태로 튜닝하기도 한다.
+**(설명의 이해도를 위해 인덱스 스킵 스캔은 배제한 내용)
+
+동등조건 외에 범위 조건의 비교가 사용되는 쿼리
+WHERE COL_1 > 10 ORDER BY COL_1, COL_2, COL_3 // WHERE, ORDER BY 인덱스 사용가능
+WHERE COL_1 > 10 ORDER BY COL_2, COL_3 // WHERE 만 인덱스 사용가능
+
+GROUP BY 절과 ORDER BY 절의 인덱스 사용
+GROUP BY와 ORDER BY절이 동시에 사용된 쿼리에서 두 절이 모두 하나의 인덱스를 사용해서 처리되려면 GROUP BY 절에 명시된 칼럼과 ORDER BY에 명시된 칼럼의 순서와
+내용이 모두 같아야 한다. 두 절이 같이 사용된 쿼리에서는 둘 중 하나라도 인덱스를 이용할 수 없을 때는 둘 다 인덱스를 사용하지 못한다. 
+
+*5.7까지는 GROUP BY는 GROUP BY 칼럼에 대한 정렬까지 함께 수행하는 것이 기본 작동 방식이었다. 하지만 8.0부터는 GROUP BY 절이 칼럼의 정렬까지는 보장하지
+않는 형태로 바뀌었다. 그래서 8.0부터는 GROUP BY 칼럼으로 그루핑과 정렬을 모두 수행하기 위해서는 ORDER BY도 명시해야 한다.
+
+WHERE 절의 비교 조건 사용 시 주의사항
+NULL 비교
+
+66
+
 
 
 
