@@ -433,8 +433,55 @@ GROUP BY와 ORDER BY절이 동시에 사용된 쿼리에서 두 절이 모두 �
 
 WHERE 절의 비교 조건 사용 시 주의사항
 NULL 비교
+다른 DBMS와는 조금 다르게 Mysql에서는 NULL 값이 포함된 레코드도 인덱스로 관리된다. 이는 인덱스에서는 NULL을 하나의 값으로 인정해서 관리한다는것을 의미한다.
+SQL 표준에서 NULL의 정의는 비교할 수 없는 값이다. 그래서 두 값이 모두 NULL을 가진다고 하더라도 이 두 값이 동등한지 비교하는 것은 불가능하다.
+연산이나 비교에서 한쪽이라도 NULL이면 그 결과도 NULL이 반환되는 이유가 바로 여기에 있다. NULL을 비교하려면 IS NULL (또는 <=>)을 사용해야 하고,
+그 밖의 방법으로는 칼럼의 값이 NULL인지 알 수 있는 방법이 없다.
 
-66
+ISNULL() 함수를 WHERE 조건에서 사용할 때의 주의점
+SELECT * FROM titles WHERE to_date IS NULL;
+SELECT * FROM titles WHERE ISNULL(to_date);
+SELECT * FROM titles WHERE ISNULL(to_date)=1;
+SELECT * FROM titles WHERE ISNULL(to_date)=true;
+=> 1,2번째 쿼리는 인덱스를 사용할 수 있고(to_date 관련), 3,4번째 쿼리는 인덱스나 테이블을 풀 스캔하는 형태로 처리된다.
+NULL을 비교 할 때는 가급적 IS NULL 연산자를 사용하길 권장한다.
+
+문자열이나 숫자 비교
+문자열 칼럼이나 숫자 칼럼을 비교할 때는 반드시 그 타입에 맞는 상숫값을 사용할 것을 권장한다.
+
+날짜 비교
+DATE 또는 DATETIME과 문자열 비교
+DATE 또는 DATETIME 타입의 값과 문자열을 비교할 때는 문자열 값을 자동으로 DATETIME 타입의 값으로 변환해서 비교를 수행한다.
+비교하는 칼럼의 타입이 DATE 또는 DATETIME이면 별도로 문자열을 DATE 또는 DATETIME타입으로 명시적으로 변환하지 않아도 Mysql이 내부적으로 변환을 수행한다.
+ex) SELECT COUNT(*) FROM employees WHERE hire_date>'2011-07-23';
+하지만 칼럼을 강제적으로 문자열로 바꿀경우에는 인덱스를 효율적으로 이용하지 못한다. 칼럼을 변경하지 않고 상수를 변경하는 형태로 조건을 사용하는 것이 좋다.
+DATE_ADD, DATE_SUB도 마찬가지이다.
+
+DATE, DATETIME의 비교
+ex) STR_TO_DATE('2011-06-30','%Y-%m-%d') < STR_TO_DATE('2011-06-30 00:00:01','%Y-%m-%d %H:%i:%s') -> TRUE(1)
+STR_TO_DATE('2011-06-30','%Y-%m-%d') == '2011-06-30 00:00:00' 으로 변환되어 비교 됨.
+
+DATETIME과 TIMESTAMP의 비교
+DATE나 DATETIME 타입의 값과 TIMESTAMP의 값을 별도의 타입 변환 없이 비교하면 문제없이 작동하고 실제 실행 계획도 인덱스 레인지 스캔을 사용해서 동작하는
+것처럼 보이지만 사실은 그렇지 않다.
+UNIX_TIMESTAMP() 함수의 결괏값은 Mysql 내부적으로는 단순 숫자 값에 불과할 뿐이다. 반드시 비교 값으로 사용되는 상수 리터럴을 비교 대상 칼럼의 타입에
+맞게 변환해서 사용하는 것이 좋다. 칼럼이 DATETIME 타입이라면 FROM_UNIXTIME() 함수를 이용해 TIMESTAMP 값을 DATETIME타입으로 만들어서 비교해야 한다.
+반대로 칼럼의 타입이 TIMESTAMP라면 UNIX_STAMP() 함수를 이용해 DATETIME을 TIMESTAMP로 변환해서 비교해야 한다. 또는 간단하게 NOW() 함수를 이용해도 된다.
+
+Short-Circuit Evaluation (in_transaction p72 예제)
+여러 개의 표현식이 AND 또는 OR 논리 연산자로 연결된 경우 선행 표현식의 결과에 따라 후행 표현식을 평가할지 말지 결정하는 최적화를 Short-Circuit Evaluation
+(p 72)
+1번 조건의 결과 20000건
+2번 조건의 결과 0건      // 1,2번은 인덱스를 사용할 수 없는 조건이라는 전제
+1,2번 조건을 결합(AND) 했을 때 1,2번의 조건을 순서를 바꾼다면 ? 2번 조건이 먼저 나열됐을 경우가 응답 시간이 더 짧아지고 1번의 결과가 더 클 경우 결과도
+더 크게 차이 난다.
+
+Mysql 서버는 쿼리의 WHERE 절에 나열된 조건을 순서대로 "Short-circuit Evaluation" 방식으로 평가해서 해당 레코드를 반환해야 할지 말지를 결정한다.
+그런데 WHERE 절의 조건 중에서 인덱스를 사용할 수 있는 조건이 있다면 "Short-circuit Evaluation"과는 무관하게 Mysql 서버는 그 조건을 가장 최우선으로
+사용한다. 그래서 WHERE 조건절에 나열된 조건의 순서가 인덱스의 사용 여부를 결정하지는 않는다.
+
+
+
 
 
 
