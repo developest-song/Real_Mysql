@@ -819,10 +819,75 @@ IN과 비슷하지만 이 경우를 안티 세미 조인이라고 명명한다. 
 두 최적화 모두 그다지 성능 향상에 도움이 되지 않는 방법이므로 쿼리가 최대한 다른 조건을 활용해서 데이터 검색 범위를 좁힐 수 있께 하는 것이 좋다.
 WHERE 절에 단독으로 안티 세미 조인 조건만 있다면 풀 테이블 스캔을 피할 수 없으니 조심해야 한다.
 
-p114
+CTE(Common Table Expression) ** 8.0
+CTE는 이름을 가지는 임시 테이블로서, SQL 문장 내에서 한번 이상 사용될 수 있으며 SQL 문장이 종료되면 자동으로 CTE 임시 테이블은 삭제된다.
+CTE는 재귀적 반복 실행 여부를 기준으로 Non_recursive와 Recursive CTE로 구분된다. 
+Mysql 서버의 CTE는 재귀 여부에 관계없이 다음과 같이 다양한 SQL 문장에서 사용할 수 있다.
 
- 
+* SELECT, UPDATE, DELETE 문장의 제일 앞쪽
+- WITH cte1 AS (SELECT ...) SELECT ...
+- WITH cte1 AS (SELECT ...) UPDATE ...
+- WITH cte1 AS (SELECT ...) DELETE ...
 
+* 서브쿼리의 제일 앞쪽
+- SELECT ... FROM ... WHERE id IN (WITH cate1 AS (SELECT ...) SELECT ...) ...
+- SELECT ... FROM (WITH cte1 AS (SELECT ...) SELECT ...) ...
+
+* SELECT 절의 바로 앞쪽
+- INSERT ... WITH cte1 AS (SELECT ...) SELECT ...
+- REPLACE ... WITH cte1 AS (SELECT ...) SELECT ...
+- CREATE TABEL ... WITH cte1 AS (SELECT ...) SELECT ...
+- CREATE VIEW ... WITH cte1 AS (SELECT ...) SELECT ...
+- DECLARE CURSOR ... WITH cte1 AS (SELECT ...) SELECT ...
+- EXPLAIN  ... WITH cte1 AS (SELECT ...) SELECT ...
+
+비 재귀적 CTE(Non-Recursive CTE)
+Mysql 서버에서는 ANSI 표준을 그대로 이용해서 WITH 절을 이용해 CTE를 정의한다.
+ex_1)
+WITH cte1 AS (SELECT * FROM departments)
+SELECT * FROM cte1;
+
+ex_2)
+SELECT * 
+  FROM (SELECT * FROM departments) cte1;
+  
+실제 두 쿼리는 실행 계획까지 동일하게 사용한다.
+
+ex_3) 
+WITH cte1 AS (SELECT * FROM departments),
+     cte2 AS (SELECT * FROM dept_emp)
+SELECT *
+  FROM cte1
+ INNER JOIN cte2 ON cte2.dept_no=cte1.dept_no;
+  
+위와 같이 여러 개의 임시 테이블을 하나의 쿼리에서 사용할 수도 있다.
+
+임시 테이블이 여러 번 사용되는 쿼리는 둘의 실행 계획이 조금 달라진다.
+ex) (p116)
+1. salaries를 cte1 테이블로 선언 후 employees e 테이블과 cte t1, cte t2 를 조인할 경우
+2. employees e 테이블을 salaries t1, salaries t2와 조인할 경우
+
+1의 경우엔 salaries 테이블을 이용한 cte1 임시 테이블(<derived2>)을 한 번만 생성하지만 2의 경우엔 2개의 임시 테이블(<derived2>와 <derived3>)을
+생성하기 위해서 각 서브쿼리에서 salaries 테이블을 읽는다. 
+
+그리고 CTE로 생성된 임시 테이블은 다른 CTE 쿼리에서 참조할 수 있다는 장점도 있다.
+ex) (p117)
+cte1을 선언 후 cte2를 선언할 때 cte1 테이블을 이용해서 조인할 수 있다. 
+
+이렇게 WITH 절에 정의된 순서대로 CTE 임시 테이블은 재사용될 수 있는데, 
+WITH 절에서 뒤에 정의된 cte2 테이블을 먼저 선언된 cte1의 CTE 쿼리에서는 참조할 수 없다.
+
+CTE를 재귀적으로 사용하지 않더라도 기존 FROM 절에 사용되던 서브쿼리에 비해 다음의 3가지 장점이 있다. 
+- CTE 임시 테이블은 재사용 가능하므로 FROM 절의 서브쿼리보다 효율적이다.
+- CTE로 선언된 임시 테이블을 다른 CTE 쿼리에서 참조할 수 있다.
+- CTE는 임시 테이블의 생성 부분과 사용 부분의 코드를 분리할 수 있으므로 가독성이 높다.
+
+재귀적 CTE(Recursive CTE)
+재귀 쿼리는 아마도 많은 Mysql 사용자가 기다리던 기능일 것이다. 데이터베이스 업계에서는 윈백(Win Back)프로젝트라는 말을 자주 듣는다.
+윈백 프로젝트에서 많은 사용자가 특정 기능이 없어서 Mysql 서버를 사용하기 어렵다고 이야기했는데, 그중에서 가장 대표적인 기능이 재귀 쿼리였다.
+Mysql 8.0버전에서야 비로소 CTE를 이용한 재귀 쿼리가 가능해졌다. * 윈백(다른 DBMS를 사용하다가 특정 DBMS로 다시 돌아가는, 기능, 처리성능의 부재로 인한)
+
+ex)
  
 
 
