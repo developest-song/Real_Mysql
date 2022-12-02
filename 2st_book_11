@@ -943,12 +943,78 @@ SELECT /*+ SER_VAR(cte_max_recursion_depth=10000) */ * FROM cte;
 그리고 마지막으로 SELECT 절과 ORDER BY 절, LIMIT 절이 실행되어 최종 결과가 반환된다. 
 
 쿼리에서 각 절의 실행 순서를 숙지하고 있어야 정확한 쿼리를 작성할 수 있다.
+위의 순서를 벗어나는 쿼리를 작성하고자 한다면 FROM 절의 서브쿼리를 사용해야 한다. 
 
+윈도우 함수 기본 사용법
+AGGREGATE_FUNC() OVER(<partition> <order>) AS window_func_column
 
+윈도우 함수는 용도별로 다양한 함수들을 사용할 수 있는데, 집계 함수와는 달리 함수 뒤에 OVER 절을 이용해 연산 대상을 파티션하기 위한 옵션을 명시할 수 있다.
+이렇게 OVER 절에 의해 만들어진 그룹을 파티션 또는 윈도우 라고 한다.
 
+ex) 직원들의 입사 순서를 조회하는 쿼리
+SELECT e.*,
+       RANK() OVER(ORDER BY e.hire_date) AS hire_date_rank
+  FROM employees e;
+예제 쿼리에서 "RANK() OVER(ORDER BY e.hire_date)"는 소그룹을 별도로 구분하지 않고 전체 결과 집합에서 e.hire_date 칼럼으로 정렬한 후 순위(RANK() 함수)
+를 매기게 했다. 부서별로 입사 순위를 매기고자 한다면 다음과 같이 부서 코드로 파티션을 하면 된다.
 
+ex)
+SELECT de.dept_no, e.emp_no, e.first_name, e.hire_date,
+       RANK() OVER(PARITION BY de.dept_no ORDER BY e.hire_date) AS hire_date_rank
+  FROM employees e
+ INNER JOIN dept_emp e ON de.emp_no=e.emp_no
+ ORDER BY de.dept_no, e.hire_date;
+소그룹 파티션이나 정렬이 필요치 않은 경우 PARTITION이나 ORDER BY 없이 비어 있는 OVER() 절을 사용하면 된다.
 
+ex) salaries 테이블에서 emp_no가 10001인 사원의 급여 이력과 평균 급여를 조회하는 쿼리
+SELECT emp_no, from_date, salary,
+       AVG(salary OVER() AS avg_salary
+  FROM salaries
+ WHERE emp_no=10001;
 
+윈도우 함수의 각 파티션 안에서도 연산 대상 레코드별로 연산을 수행할 소그룹이 사용되는데, 이를 프레임이라고 한다. 윈도우 함수에서 프레임을 명시적으로
+지정하지 않아도 Mysql 서버는 상황에 맞게 프레임을 묵시적으로 선택한다.
+프레임은 레코드의 순서대로 현재 레코드 기준 앞뒤 몇 건을 연산 범위로 제한하는 역할을 한다.
+
+AGGREGATE_FUNC() OVER(<partition> <order> <frame>) AS window_func_column
+
+frame:
+ {ROWS | RANGE} {frame_start | frame between}
+ 
+frame_between:
+ BETWEEN frame_start AND frame_end
+ 
+frame_start, frame_end:{
+   CURRENT ROW
+ | UNBOUNDED PRECEDING
+ | UNBOUNDED FOLLOWING
+ | expr PRECEDING
+ | expr FOLLOWING
+}
+
+프레임을 만드는 기준으로 ROWS와 RANGE 중 하나를 선택할 수 있다.
+- ROWS : 레코드의 위치를 기준으로 프레임을 생성
+- RANGE : ORDER BY 절에 명시된 칼럼을 기준으로 값의 범위로 프레임 생성
+
+프레임의 시작과 끝을 의미하는 키워드들의 의미는 다음과 같다
+- CURRENT ROW : 현재 레코드
+- UNBOUNDED PRECEDING : 파티션의 첫 번째 레코드
+- UNBOUNDED FOLLOWING : 파티션의 마지막 레코드
+- expr PRECEDING : 현재 레코드로부터 n번째 이전 레코드
+- expr FOLLOWING : 현재 레코드로부터 n번째 이후 레코드
+
+프레임이 ROWS로 구분되면 expr에는 레코드의 위치를 명시하고, RANGE로 구분되면 expr에는 칼럼과 비교할 값이 설정돼야 한다.
+그래서 프레임이 시작과 끝이 expr을 가지는 경우는 다음 예시와 같이 사용될 수 있다.
+ex) 
+- 10 PRECEDING : 현재 레코드로부터 10건 이전부터
+- INTERVAL 5 DAY PRECEDING : 현재 레코드의 ORDER BY 칼럼값보다 5일 이전 레코드부터
+- 5 FOLLOWING : 현재 레코드로부터 5건 이후까지
+- INTERVAL '2:30' MINUTE_SECOND FOLLOWING : 현재 레코드의 ORDER BY 칼럼값보다 2분 30초 이후까지
+
+ex)
+SELECT emp_no, from_date, salary,
+
+p131
 
 
 
