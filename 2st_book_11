@@ -1045,8 +1045,83 @@ Mysql 서버의 윈도우 함수에는 집계 함수와 비 집계 함수를 모
 있어야 하며 윈도우 함수로만 사용될 수 있다.
 
 집계 함수(Aggregate Function)
+AVG() - 평균 값 반환
+BIT_AND() - AND 비트 연산 결과 반환
+BIT_OR() - OR 비트 연산 결과 반환
+BIT_XOR() -XOR 비트 연산 결과 반환
+COUNT() - 건수 반환
+JSON_ARRAYAGG() - 결과를 JSON 배열로 반환
+JSON_OBJECTAGG() - 결과를 JSON OBJECT 배열로 반환
+MAX() - 최댓값 반환
+MIN() - 최솟값 반환
+STDDEV_POP(), STDDEV(), STD() - 표본 표준 편차 값 반환
+SUM() - 합계 값 반환
+VAR_POP(), VARIANCE() - 표준 분산 값 반환
+VAR_SAMP() - 표본 분산 값 반환
 
-p133
+비 집계 함수(Non-Aggregate Function()
+CUME_DIST() - 누적 분포 값 반환(파티션별 현재 레코드보다 작거나 같은 레코드의 누적 백분율)
+DENSE_RANK() - 랭킹 값 반환(Gap 없음) (동일한 값에 대해서는 동일 순위를 부여하며 ,동일한 순위가 여러 건이어도 한 건으로 취급)
+FIRST_VALUE() - 파티션의 첫 번째 레코드 값 반환
+LAG() - 파티션 내에서 파라미터(N)을 이용해 N번째 이전 레코드 값 반환
+LAST_VALUE() - 파티션의 마지막 레코드 값 반환
+LEAD() - 파티션 내에서 파라미터(N)을 이용해 N번째 이후 레코드 값 반환
+NTH_VALUE() - 파티션의 N번째 값 반환
+NTILE() - 파티션별 전체 건수를 파라미터(N)로 N-등분한 값 반환
+PERCENT_RANK() - 퍼센트 랭킹 값 반환
+RANK() - 랭킹 값 반환(Gap 있음)
+ROW_NUMBER() - 파티션의 레코드 순번 반환
+
+DENSE_RANK(), RANK(), ROW_NUMBER()
+DENSE_RANK(), RANK() 모두 ORDER BY 기준으로 매겨진 순위를 반환한다. RANK() 함수는 동점인 레코드가 두 건 이상인 경우 그 다음 레코드를 동점인 
+레코드 수만큼 증가시킨 순위를 반환하지만, DENSE_RANK() 함수는 동점인 레코드를 1건으로 가정하고 순위를 매기기 때문에 연속된 순위를 가진다.
+ROW_NUMBER()는 똑같이 순위를 매기지만 이름 그대로 각 레코드의 고유한 순번을 반환한다. 그래서 ROW_NUMBER() 는 동점에 대한 고려 없이 정렬된 순서대로
+레코드 번호를 부여한다.
+DENSE_RANK()  1 2 2 2 3 4 5
+RANK()        1 2 2 2 5 6 7
+ROW_NUMBER()  1 2 3 4 5 6 7
+
+LAG(), LEAD()
+파티션 내에서 현재 레코드를 기준으로 N번째 이전(이후) 레코드를 반환, 3번째 파라미터는 선택사항
+LAG[LEAD](컬럼, N, 대체 값) 
+
+윈도우 함수와 성능
+Mysql 서버의 윈도우 함수는 8.0 버전에 처음 도입됐으며, 아직 인덱스를 이용한 최적화가 부족한 부분도 있다. 
+ex)
+SELECT MAX(from_date) OVER(PARTITION BY emp_no) AS max_from_date from salaries;
+
+SELECT MAX(from_date) from salaries GROUP BY emp_no;
+*p138 의 실행 계획을 확인하면 
+윈도우 함수를 사용하는 쿼리의 실행 계획이 인덱스를 풀 스캔했으며, 레코드 정렬 작업까지 실행했다는 것을 알 수 있다.
+반면 GROUP BY 절을 사용하는 쿼리는 별도의 정렬 작업 없이 루스 인덱스 스캔으로 사원별 MAX(from_date) 값을 찾아냈다는 것을 알 수 있다.
+
+쿼리 요건에 따라 GROUP BY나 다른 기존 기능으로는 윈도우 함수를 대체할 수 없겠지만, 가능하다면 윈도우 함수에 너무 의존하지 않는 것이 좋다.
+또한 배치 프로그램이라면 윈도우 함수를 사용해도 무방하겠지만 온라인 트랜잭션 처리에서는 많은 레코드에 대해 윈도우 함수를 적용하는 것은 가능하면
+피하자. 소량의 레코드에 대해서라면 윈도우 함수를 사용해도 메모리에서 빠르게 처리될 것이므로 특별히 성능에 대해 고민하지 않아도 된다.
+
+잠금을 사용하는 SELECT
+InnoDB 테이블에 대해서는 레코드를 SELECT할 때 레코드에 아무런 잠금도 걸지 않는데, 이를 잠금 없는 읽기(Non Locking Consistent Read)라고 한다.
+하지만 SELECT 쿼리를 이용해 읽은 레코드의 칼럼 값을 애플리케이션에서 가공해서 다시 업데이트하고자 할 때는 SELECT가 실행된 후 다른 트랜잭션이 
+그 칼럼의 값을 변경하지 못하게 해야 한다. 이럴 때는 레코드를 읽으면서 강제로 잠금을 걸어 둘 필요가 있는데, 이때 사용하는 옵션이 FOR SHARE와
+FOR UPDATE 절이다. FOR SHARE는 SELECT 쿼리로 읽은 레코드에 대해 읽기 잠금을 걸고, FOR UPDATE는 SELECT 쿼리가 읽은 레코드에 대해서 쓰기 잠금을
+건다. 
+* 8.0 이전 버전에서는 SELECT로 일긍ㄴ 레코드에 대해서 읽기 잠금을 위해 LOCK IN SHARE MODE 절을 사용했지만 8.0부터는 FOR SHARE로 변경됐다.
+여전히 그 전 기능도 지원하지만 호환성 차원이다.
+ex)
+SELECT * FROM employees WHERE emp_no=10001 FOR SHARE;
+SELECT * FROM employees WHERE emp_no=10001 FOR UPDATE;
+
+이 두 가지 잠금 옵션은 모두 AUTO-COMMIT이 비활성화된 상태 또는 BEGIN 명령이나 START TRANSACTION 명령으로 트랜잭션이 시작된 상태에서만 잠금이 유지된다.
+- FOR SHARE 절은 SELECT된 레코드에 대해 읽기 잠금(공유 잠금, Shared lock)을 설정하고 다른 세션에서 해당 레코드를 변경하지 못하게 한다. 
+  물론 다른 세션에서 잠금이 걸린 레코드를 읽는 것은 가능하다.
+- FOR UPDATE 절은 쓰기 잠금(배타 잠금, Exclusive lock)을 설정하고, 다른 트랜잭션에서는 그 레코드를 변경하는 것뿐만 아니라 
+  읽기(FOR SHARE 절을 사용하는 SELECT 쿼리)도 수행할 수 없다.
+
+InnoDB 스토리지 엔진을 사용하는 테이블에서는 잠금 없는 읽기가 지원되기 때문에 특정 레코드가 "SELECT ... FOR UPDATE" 쿼리에 의해서 잠겨진
+상태라고 하더라도 FOR SHARE나 FOR UPDATE 절을 가지지 않는 단순 SELECT 쿼리는 아무런 대기 없이 실행된다. 
+
+잠금 대기하지 않는 경우  
+P 140
 
 
 
