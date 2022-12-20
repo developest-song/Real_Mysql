@@ -1121,9 +1121,39 @@ InnoDB 스토리지 엔진을 사용하는 테이블에서는 잠금 없는 읽�
 상태라고 하더라도 FOR SHARE나 FOR UPDATE 절을 가지지 않는 단순 SELECT 쿼리는 아무런 대기 없이 실행된다. 
 
 잠금 대기하지 않는 경우  
-P 140
+세션-1                                 세션-2
+BEGIN;
+SELECT * FROM employees
+ WHERE emp_np=10001 FOR UPDATE;
+                                      SELECT * FROM employees
+                                       WHERE emp_no=10001;
+                                      -> 잠금 대기 없이 즉시 결과 반환
 
+잠금 대기하는 경우  
+세션-1                                 세션-2
+BEGIN;
+SELECT * FROM employees
+ WHERE emp_np=10001 FOR UPDATE;
+                                      SELECT * FROM employees
+                                       WHERE emp_no=10001 FOR SHARE;
+                                      -> 세션-1의 잠금을 기다림
+COMMIT;
+                                      -> SELECT 쿼리 결과 반환
 
+잠금 테이블 선택
+ex) 사원의 정보를 조회하는 SELECT 쿼리에 FOR UPDATE를 함께 사용하는 예제
+SELECT *
+  FROM employees e
+ INNER JOIN dept_emp de ON de.emp_no=e.emp_no
+ INNER JOIN departments d ON d.dept_no=de.dept_no
+   FOR UPDATE;
+->해당 쿼리에서 InnoDB 스토리지 엔진은 3개 테이블에서 읽은 레코드에 대해 모두 쓰기 잠금을 걸게 된다.
+8.0 이후부터는 employees만 선택적으로 잠금을 걸 수 있는 옵션이 생겼다.
+FOR UPDATE 뒤에 OF 테이블 절을 추가하면 된다. Alias가 사용된 경우 별명을 명시하면 된다. (FOR SHARE도 동일하다)
+ex) FOR UPDATE -> FOR UPDATE OF e
+
+NOWAIT & SKIP LOCKED
+P142
 
 
 
