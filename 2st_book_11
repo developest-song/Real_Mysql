@@ -1153,7 +1153,27 @@ FOR UPDATE 뒤에 OF 테이블 절을 추가하면 된다. Alias가 사용된 �
 ex) FOR UPDATE -> FOR UPDATE OF e
 
 NOWAIT & SKIP LOCKED
-P142
+8.0 부터는 추가된 기능이다. 지금까지의 잠근은 누군가가 레코드를 잠그고 있다면 다른 트랜잭션은 그 잠금이 해제될 때까지 기다려야 했다.
+때로는 일정 시간이 지나면 잠금 획득 실패 에러 메시지를 받을 수도 있었다. 
+ex)
+BEGIN;
+SELECT * FROM employees WHERE emp_no=10001 FOR UPDATE;
+... 필요 연산 수행 ...
+UPDATE employees SET ... WHERE emp_no=10001;
+COMMIT;
+위의 경우 연산 수행에 의해 UPDATE가 안되고 있을 것이고, 아니면 innodb_lock_wait_timeout 설정 변수값에 의해(기본 50초) 에러 메시지를 
+받을 것이다.
+애플리케이션의 어떤 기능에서 필요해 의해 empno=10001 레코드가 이미 잠겨진 상태라면 그냥 무시하고 즉시 에러를 반환하고, 다른 처리를 수행하거나
+다른 트랜잭션을 시작하도록 구현해야 할때 NOWAIT 옵션을 사용하면 된다.
+ex) SELECT * FROM employees WHERE emp_no=10001 FOR UPDATE NOWAIT;
+NOWAIT 옵션을 사용하면 SELECT 쿼리가 해당 레코드에 대해 즉시 잠금을 획득했다면 NOWAIT 옵션이 없을 때와 동일하게 실행된다.
+* 하지만 해당 레코드가 다른 트랜잭션에 의해서 잠겨진 상태라면 에러를 반환하면서 쿼리는 즉시 종료된다.
+
+SKIP LOCKED 옵션은 SELECT하려는 레코드가 다른 트랜잭션에 의해 이미 잠겨진 상태라면 에러를 반환하지 않고 잠긴 레코드는 무시하고 잠금이
+걸리지 않은 레코드만 가져온다.
+p143 예제
+
+
 
 
 
