@@ -62,7 +62,7 @@ Mysql 서버는 설치된 운영체제에 따라 테이블명의 대소문자를
 lower_case_table_names
 -> 1로 설정 시 모두 소문자로 저장, 대소문자 구분 x
 -> 0 DB나 테이블명에 대해 대소문자 구분
--> 2 (Win, Mac) 저장은 대소문자 구분 Mysql 쿼리에서는 대소문자를 구분하지 안흥ㅁ
+-> 2 (Win, Mac) 저장은 대소문자 구분 Mysql 쿼리에서는 대소문자를 구분하지 않음
 
 Mysql 예약어
 생성하는 데이터베이스나 테이블, 칼럼의 이름을 예약어와 같은 키워드로 생성하면 해당 칼럼이나 테이블을 SQL에서 사용하기 위해 항상 역따옴표(`)나 쌍따옴표로 감싸야한다.
@@ -1171,8 +1171,58 @@ NOWAIT 옵션을 사용하면 SELECT 쿼리가 해당 레코드에 대해 즉시
 
 SKIP LOCKED 옵션은 SELECT하려는 레코드가 다른 트랜잭션에 의해 이미 잠겨진 상태라면 에러를 반환하지 않고 잠긴 레코드는 무시하고 잠금이
 걸리지 않은 레코드만 가져온다.
-p143 예제
 
+세션-1                          세션-2
+BEGIN;
+SELECT * FROM salaries
+ WHERE emp_no=10001
+   AND from_date='1986-06-26'
+   FOR UPDATE;
+                               
+                                SELECT * FROM salaries
+                                 WHERE emp_no=10001
+                                 LIMIT 1;
+                                 
+                                SELECT * FROM salaries
+                                 WHERE emp_no=10001
+                                   AND from_date='1986-06-26'
+                                   LIMIT 1
+                                   FOR UPDATE SKIP LOCKED;
+
+세션 1번에서 salaries 테이블의 특정 레코드를 SELECT .. FOR UPDATE 구문을 사용해 잠근 상태에서 세션 2번에서 동일 조건으로 FOR UPDATE 절 없이
+그냥 실행했을 때는 세션 1번에서 조회한 레코드와 동일한 레코드를 반환한다. 하지만 동일한 SELECT 쿼리에서 FOR UPDATE SKIP LOCKED 절을 추가하면
+Mysql 서버는 세션 1번에서 잠그고 있는 레코드는 무시(SKIP LOCKED)하고 그다음 레코드를 반환했다. 이런 이유로 SKIP LOCKED 절을 가진 SELECT 구문은
+확정적이지 않은(NON-DETERMINISTIC)쿼리가 된다.
+
+* 확정적이란 말의 의미는 입력이 동일하면 시점에 관계없이 동일한 결과를 반환하는 것을 의미한다. 
+위의 비확정적인 쿼리는 문장(STATEMENT) 기반의 복제에서 소스 서버와 레플리카 서버의 데이터를 다르게 만들수도 있다. 그래서 가능하면 복제의 바이너리
+로그 포맷으로 STATEMENT보다는 ROW 또는 MIXED를 사용하자.
+
+간단한 요건을 가지는 쿠폰 발급 기능
+- 하나의 쿠폰은 한 사용자만 사용 가능하다.
+- 쿠폰의 개수는 1000개 제한이며, 선착순으로 요청한 사용자에게 발급한다.
+
+coupon table
+coupon_id
+owned_user_id /* 쿠폰 발급시 소유한 사용자의 id를 저장
+coupon_code
+...
+
+주인이 없는(owned_user_id=0) 쿠폰을 하나 가져온다. 이때 다른 트랜잭션에서 해당 쿠폰을 가져가지 못하게 FOR UPDATE 절을 사용했다.
+BEGIN;
+SELECT * 
+  FROM coupon
+ WHERE owned_user_id=0 
+ ORDER BY coupon_id ASC 
+ LIMIT 1 
+   FOR UPDATE;
+   
+   .. 응용 프로그램 연산 수행 ..
+   
+UPDATE coupon SET owned_user_id=? WHERE coupon_id=?;
+COMMIT;
+
+p145 밑
 
 
 
