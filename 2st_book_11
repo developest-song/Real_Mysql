@@ -1264,7 +1264,40 @@ INSERT하고자 하는 데이터가 정교하지 않아도 되는 경우 건건�
 ex) INSERT IGNORE INTO salaries VALUES (NULL, NULL, NULL, NULL); 
 -> NOT NULL 컬럼에 NULL이 들어갈 경우 숫자 칼럼의 기본 값인 0을 INSERT 한다. (에러가 아닌 경고 메시지와 함께)
 
-p150
+INSERT ... ON DUPLICATE KEY UPDATE
+INSERT IGNORE 문장은 중복이나 에러 발생 건에 대해서는 모두 무시하겠지만 INSERT ... ON DUPLICATE KEY UPDATE 문장은 프라이머리 키나 
+유니크 인덱스의 중복이 발생하면 UPDATE 문장의 역할을 수행하게 해준다. Mysql 서버의 REPLACE 문장도 INSERT ... ON DUPLICATE KEY UPDATE 문장과
+비슷한 역할을 하지만 내부적으로 REPLACE 문장은 DELETE와 INSERT의 조합으로 작동한다. 하지만 INSERT ... ON DUPLICATE KEY UPDATE 문장은
+중복된 레코드가 있다면 기존 레코드를 삭제하지 않고 기존 레코드의 칼럼을 UPDATE하는 방식으로 작동한다. 
+** REPLACE(DELETE+INSERT)는 성능상의 장점이 그다지 없기 때문에 INSERT ... ON DUPLICATE KEY UPDATE 문장은 권한다.
+ex)
+INSERT INTO daily_statistic (target_date, stat_name, stat_value) 
+       VALUES (DATE(NOW()), 'VISIT', 1)
+       ON DUPLICATE KEY UPDATE stat_value=stat_value+1;
+-> PK가 중복 되었을때 KEY UPDATE 구문이 실행됨 
+
+ex)
+INSERT INTO daily_statistic
+       SELECT DATE(visited_at), 'VISIT', COUNT(*)
+         FROM access_log
+        GROUP BY DATE(visited_at)
+           ON DUPLICATE KEY UPDATE stat_value=stat_value + VALUES(stat_value);
+-> 8.0.20 부터 VALUES() 함수 사용시 경고 메시지 출력  이후엔 지원이 안되므로 p 152번 예제들을 참고하여 대체 사용 권장
+
+LOAD DATA 명령 주의사항
+Mysql 서버의 LOAD DATE 명령도 내부적으로 Mysql 엔진과 스토리지 엔진의 호출 횟수를 최소화하고 스토리지 엔진이 직접 데이터를 적재하기 때문에
+일반적으로 INSERT 명령과 비교했을 때 매우 빠르다고 할 수 있다. 하지만 다음과 같은 단점이 존재한다.
+- 단일 스레드로 실행
+- 단일 트랜잭션으로 실행
+
+**LOAD DATA 명령으로 적재하는 데이터가 아주 많지 않다면 앞의 2가지 사항은 그다지 큰 문제가 되지 않는다. 하지만 데이터가 매우 커서 실행 시간이
+아주 길어진다면 다른 온라인 트랜잭션 쿼리들의 성능이 영향을 받을 수 있다. 우선 LOAD DATA 명령은 단일 스레드로 실행되기 때문에 적재해야 할
+데이터 파일이 매우 크다면 시간이 매우 길어질 수 있다. 테이블에 여러 인덱스가 있다면 LOAD DATA 문장이 레코드를 INSERT하고 인덱스에도 
+키 값을 INSERT해야 한다. 그런데 테이블에 레코드가 INSERT 되면 될수록 테이블과 인덱스의 크기도 커지게 된다. 
+하지만 LOAD DATA 문장은 단일 스레드로 실행 되기 때문에 시간이 지나면 지날수록 INSERT 속도는 현저히 떨어진다.
+
+
+
 
 
 
