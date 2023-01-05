@@ -1371,7 +1371,23 @@ Auto_Increment 칼럼으로 프라이머리 키를 생성하는 것은 Mysql에�
 * STATEMENT -> innodb_autoinc_lock_mode : 1
 + 0이나 1로 설정하더라도 시간이 조금씩 지나면서 연속된 값에 빈 공간이 생길 가능성이 높다. 
 
-P159
+*AUTO_INCREMENT는 지금까지 살펴본 일련번호를 칼럼에 저장하는 기능뿐만 아니라 가장 최근에 저장된 AUTO_INCREMENT 값을 안전하게 조회할 수 있는 기능도 있다.
+하지만 많은 사용자가 매번 "SELECT MAX(member_id) FROM ..." 같은 쿼리를 실행해 최댓값을 조회한다.
+하지만 이렇게 조회하게 되면 다른 커넥션에서 증가된 AUTO_INCREMENT값을 가져올 수 있으므로 현재 커넥션에서 가장 마지막으로 INSERT된 AUTO_INCREMENT 값만
+반환하는 SELECT LAST_INSERT_ID();를 이용하여 조회하면 안전하다.
+
+UPDATE와 DELETE
+Mysql에서는 여러 테이블을 조인해서 한 개 이상 테이블의 레코드를 변경한다거나 삭제하는 기능도 제공한다. 특히 잘못된 데이터를 보정하거나 일괄로 많은
+레코드를 변경 및 삭제하는 경우에 JOIN UPDATE와 JOIN DELETE 구문은 매우 유용하다.
+
+UPDATE ... ORDER BY ... LIMIT n
+UPDATE나 DELETE 문장에 ORDER BY 절과 LIMIT 절을 동시에 사용해 특정 칼럼으로 정렬해서 상위 몇 건만 변경 및 삭제하는 것도 가능하다. (과부하를 방지)
+하지만 복제 소스 서버에서 ORDER BY ... LIMIT이 포함된 UPDATE, DELETE 문장을 실행하면 다음과 같은 경고 메시지가 발생할 수도 있다.(*STATEMENT에서)
+-> p160의 Unsafe statment written to the binary ...
+ORDER BY에 의해 정렬되더라도 중복된 값의 순서가 복제 소스 서버와 레플리카 서버에서 달라질 수도 있기 때문이다. 
+
+JOIN UPDATE
+P161
 
 
 
