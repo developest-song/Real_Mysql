@@ -1387,7 +1387,59 @@ UPDATE나 DELETE 문장에 ORDER BY 절과 LIMIT 절을 동시에 사용해 특�
 ORDER BY에 의해 정렬되더라도 중복된 값의 순서가 복제 소스 서버와 레플리카 서버에서 달라질 수도 있기 때문이다. 
 
 JOIN UPDATE
-P161
+두 개 이상의 테이블을 조인해 조인된 결과 레코드를 변경 및 삭제하는 쿼리를 JOIN UPDATE라고 한다.
+일반적으로 JOIN UPDATE는 조인되는 모든 테이블에 대해 읽기 참조만 되는 테이블은 읽기 잠금이 걸리고, 칼럼이 변견되는 테이블은 쓰기 잠금이 걸린다.
+그래서 JOIN UPDATE 문장이 웹 서비스 같은 OLTP 환경에서는 데드락을 유발할 가능성이 높으므로 너무 빈번하게 사용하는 것은 피하는 것이 좋다.
+하지만 배치 프로그램이나 통계용 UPDATE 문장에서는 유용하게 사용할 수 있다.
+
+JOIN UPDATE 쿼리도 2개 이상의 테이블을 먼저 조인해야 하므로 테이블의 조인 순서에 따라 UPDATE 문장의 성능이 달라질 수 있다. (실행 계획 먼저 확인)
+
+ex1) e.first_name을 t1.first_name로 복사
+UPDATE tb_test t1, employees e
+   SET t1.first_name=e.first_name
+ WHERE e.emp_no=t1.emp_no;
+
+ex2) UPDATE departments d,
+            (SELECT de.dept_no, COUNT(*) AS emp_count
+               FROM dept_emp de
+              GROUP BY de.dept_no) dc
+        SET d.emp_count=dc.emp_count
+      WHERE dc.dept_no=d.dept_no;
+      
+*임시 테이블이 드라이빙 테이블이 되는 것이 일반적으로 빠른 성능을 보여준다
++ ex)
+ UPDATE (SELECT de.dept_no, COUNT(*) AS emp_count
+           FROM dept_emp de
+          GROUP BY de.dept_no) dc
+        STRAIGHT_JOIN departments d ON dc.dept_no=d.dept_no
+    SET d.emp_count=dc.emp_count;
+-> STRAIGHT_JOIN 왼쪽에 명시된 테이블이 드라이빙 테이블이 되며, 오른쪽의 테이블은 드리븐 테이블이 된다.    
+
+ UPDATE /*+JOIN_ORDER (dc, d) */
+        (SELECT de.dept_no, COUNT(*) AS emp_count
+           FROM dept_emp de
+          GROUP BY de.dept_no) dc
+        INNER_JOIN departments d ON dc.dept_no=d.dept_no
+    SET d.emp_count=dc.emp_count;
+-> 8.0부터 생긴 조인 순서를 정해주는 JOIN_ORDER
+
+파생 테이블을 만들지 않고 래터럴 조인을 이용할 수도 있다. (조인하면서 다른 테이블을 참조하는 조인)
+ex)
+UPDATE departments d
+       INNER JOIN LATERAL (SELECT de.dept_no, COUNT(*) AS emp_count
+                             FROM dept_emp de
+                            WHERE de.dept_no=d.dept_no) dc ON dc.dept_no=d.dept_no
+   SET d.emp_count=dc.emp_count;
+   
+여러 레코드 UPDATE
+8.0부터 레코드 생성 문법을 이용해 레코드별로 서로 다른 값을 업데이트 할 수 있게 됐다.
+p164
+                            
+                            
+ 
+
+
+
 
 
 
